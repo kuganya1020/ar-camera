@@ -108,3 +108,20 @@ body.split-mode #settings-panel { display: block; }
 #icon-list, #settings-panel, input[type="range"] {
   touch-action: auto !important;
 }
+/* ⏱ 動画タイマー */
+#video-timer {
+  position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
+  background: rgba(255, 105, 180, 0.7); /* ピンク */
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  color: white; padding: 5px 20px; border-radius: 20px;
+  font-family: 'Courier New', Courier, monospace; /* 少しレトロな数字フォント */
+  font-weight: bold; font-size: 20px;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  display: none; /* 普段は隠しておく */
+  z-index: 1000;
+}
+
+/* 録画中はタイマーを表示する */
+body.recording-active #video-timer {
+  display: block;
+}

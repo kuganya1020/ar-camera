@@ -1,9 +1,12 @@
 var faceMesh; var video; var faces = []; var images = []; var currentIndex = 0; var isFrontCamera = true; 
 
-// ✨ ピンチズーム用の変数（ここが抜けてたよ！） ✨
+// ✨ ピンチズーム＆ドラッグ用の変数 ✨
 let globalZoom = 1;
 let initialPinchDist = 0;
 let baseZoom = 1;
+let isDragging = false; // ←ここから3行追加！
+let lastTouchX = 0;
+let lastTouchY = 0;
 
 // ✨ 最初から入っている厳選アセット（合計4枚） ✨
 var defaultAssets = [
@@ -258,19 +261,72 @@ async function takePhoto() {
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 
 // ✨ ピンチズーム用のジェスチャー魔法（ここも抜けてたよ！） ✨
+// 👇 ファイルの一番下にあるジェスチャー魔法をこれにまるごと書き換え！
+
 function touchStarted() {
   if (touches.length === 2) {
+    // ✌️ 2本指ならズームの準備！
     initialPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
     baseZoom = globalZoom;
+    isDragging = false; 
+  } else if (touches.length === 1 || mouseIsPressed) {
+    // 👆 1本指（またはPCのマウスクリック）なら移動の準備！
+    isDragging = true;
+    lastTouchX = touches.length > 0 ? touches[0].x : mouseX;
+    lastTouchY = touches.length > 0 ? touches[0].y : mouseY;
   }
 }
 
 function touchMoved() {
   if (touches.length === 2) {
+    // ✌️ ズームの計算
     let currentPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
     let zoomFactor = currentPinchDist / initialPinchDist;
     globalZoom = baseZoom * zoomFactor;
     globalZoom = constrain(globalZoom, 1, 4); 
     return false; 
+  } else if (isDragging) {
+    // 👆 スタンプ移動の計算
+    let currentX = touches.length > 0 ? touches[0].x : mouseX;
+    let currentY = touches.length > 0 ? touches[0].y : mouseY;
+
+    // ズームされている分も考慮して、実際の移動距離を割り出す
+    let dx = (currentX - lastTouchX) / globalZoom;
+    let dy = (currentY - lastTouchY) / globalZoom;
+
+    // インカメラ（鏡モード）の時は、左右の動きを反転させると自然！
+    if (isFrontCamera) dx = -dx;
+
+    // 編集画面ならプレビューを、そうじゃないなら今のスタンプを直接動かす
+    let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
+
+    if (targetConfig) {
+      targetConfig.xOff = (targetConfig.xOff || 0) + dx;
+      targetConfig.yOff = (targetConfig.yOff || 0) + dy;
+
+      // もし設定パネルが開いていたら、スライダーのツマミも「魔法のように」連動して動かす！
+      let xSlider = document.getElementById('x-slider');
+      let ySlider = document.getElementById('y-slider');
+      if (xSlider && ySlider) {
+        xSlider.value = targetConfig.xOff;
+        ySlider.value = targetConfig.yOff;
+      }
+    }
+
+    lastTouchX = currentX;
+    lastTouchY = currentY;
+    return false; // 画面全体がスクロールしちゃうのを防ぐ
   }
+}
+
+function touchEnded() {
+  if (isDragging) {
+    isDragging = false;
+    // 👆 指を離した瞬間に、その位置をこっそりポケット（LocalStorage）に保存しておく！
+    localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList));
+  }
+}
+
+function mouseReleased() {
+  touchEnded();
 }

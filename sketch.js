@@ -219,19 +219,37 @@ async function saveVideo() {
   }
 }
 
-async function takePhoto() {
-  // ✨ フラッシュを光らせる演出
-  let flash = document.getElementById('flash-overlay');
-  flash.classList.remove('fade');
-  flash.classList.add('active');
-  setTimeout(() => {
-    flash.classList.remove('active');
-    flash.classList.add('fade');
-  }, 50);
+// ↓ この関数をまるまる上書き！
 
-  // （ここから下の既存の撮影処理はそのまま！）
+async function takePhoto() {
+  // ✨ 1. フラッシュを光らせる演出
+  let flash = document.getElementById('flash-overlay');
+  if (flash) {
+    flash.classList.remove('fade');
+    flash.classList.add('active');
+    setTimeout(() => {
+      flash.classList.remove('active');
+      flash.classList.add('fade');
+    }, 50);
+  }
+
+  // 📸 2. 写真を撮って保存する処理（ここが消えちゃってたはず！）
   let canvasElement = document.querySelector('canvas');
-  // ... 以下省略
+  canvasElement.toBlob(async (blob) => {
+    let file = new File([blob], 'ar-photo.png', { type: 'image/png' });
+    
+    // スマホのシェア画面（LINEで送る・画像を保存する画面）が出せるかチェック
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { 
+        await navigator.share({ files: [file], title: 'AR写真' }); 
+      } catch (error) {
+        console.log("シェアがキャンセルされました");
+      }
+    } else {
+      // PCなどの場合は普通にダウンロードフォルダに保存
+      saveCanvas('ar-photo-' + Date.now(), 'png');
+    }
+  }, 'image/png');
 }
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }

@@ -160,23 +160,67 @@ function openPanelInEditMode(index) {
 
 function setupPreviewEvents() {
   document.getElementById('file-input').onchange = (e) => {
-    let r = new FileReader(); r.onload = (ev) => { previewImg = loadImage(ev.target.result); previewConfig.fileData = ev.target.result; }; r.readAsDataURL(e.target.files[0]);
+    let file = e.target.files[0];
+    if (!file) return;
+
+    let reader = new FileReader();
+    reader.onload = (ev) => {
+      let tempImg = new Image();
+      tempImg.onload = () => {
+        // 🎨 キャンバスを使って画像を「スタンプサイズ」にリサイズする
+        let canvas = document.createElement('canvas');
+        let MAX_WIDTH = 400; // スタンプなら400pxあれば十分綺麗！
+        let scale = MAX_WIDTH / tempImg.width;
+        
+        canvas.width = MAX_WIDTH;
+        canvas.height = tempImg.height * scale;
+
+        let ctx = canvas.getContext('2d');
+        ctx.drawImage(tempImg, 0, 0, canvas.width, canvas.height);
+
+        // ギュギュッと圧縮したデータ（画質0.7くらいが理想）を作成
+        let compressedData = canvas.toDataURL('image/jpeg', 0.7);
+        
+        previewImg = loadImage(compressedData);
+        previewConfig.fileData = compressedData;
+        console.log("画像を軽量化して読み込みました！");
+      };
+      tempImg.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
   };
+
+  // --- ボタン操作系 ---
   document.querySelectorAll('.part-btn').forEach(btn => {
-    btn.onclick = (e) => { document.querySelectorAll('.part-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); previewConfig.point = e.target.getAttribute('data-point'); };
+    btn.onclick = (e) => {
+      document.querySelectorAll('.part-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      previewConfig.point = e.target.getAttribute('data-point');
+    };
   });
   
   document.getElementById('add-btn').onclick = () => { 
-    if(!previewImg) return alert("画像を選んでね！"); assetList.push({...previewConfig}); images.push(previewImg); saveAndClose(); 
+    if(!previewImg) return alert("画像を選んでね！");
+    assetList.push({...previewConfig});
+    images.push(previewImg);
+    saveAndClose(); 
   };
+
   document.getElementById('update-btn').onclick = () => { 
-    assetList[editingIndex] = {...previewConfig}; images[editingIndex] = previewImg; saveAndClose(); 
+    assetList[editingIndex] = {...previewConfig};
+    images[editingIndex] = previewImg;
+    saveAndClose(); 
   };
+
   document.getElementById('delete-btn').onclick = () => { 
-    if(confirm("消す？")){ assetList.splice(editingIndex, 1); images.splice(editingIndex, 1); currentIndex = 0; saveAndClose(); } 
+    if(confirm("このスタンプを消しちゃう？")){
+      assetList.splice(editingIndex, 1);
+      images.splice(editingIndex, 1);
+      currentIndex = 0;
+      saveAndClose();
+    } 
   };
 }
-
 function saveAndClose() { 
   localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList)); 
   document.body.classList.remove('split-mode'); 
@@ -246,7 +290,11 @@ async function takePhoto() {
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 
 // ✨ スライダー不要！指だけでスタンプを完璧に操るジェスチャー ✨
+// ✨ スライダー不要！指だけでスタンプを完璧に操るジェスチャー ✨
 function touchStarted(event) {
+  // 🚨 追加ポイント：設定パネルが閉じている（通常撮影モード）時はロックして動かさない！
+  if (!document.body.classList.contains('split-mode')) return;
+
   // UI（ボタンやアイコン）を触った時は無視！
   if (event && event.target && event.target.tagName !== 'CANVAS') {
     isDragging = false; return;
@@ -268,6 +316,9 @@ function touchStarted(event) {
 }
 
 function touchMoved(event) {
+  // 🚨 追加ポイント：設定パネルが閉じている時は無視！
+  if (!document.body.classList.contains('split-mode')) return;
+
   if (event && event.target && event.target.tagName !== 'CANVAS') return; 
 
   let targetConfig = previewImg ? previewConfig : assetList[currentIndex];

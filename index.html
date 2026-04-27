@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>My AR Camera Pro</title>
+    
+    <link rel="icon" href="app_icon.png">
+    <link rel="apple-touch-icon" href="app_icon.png">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="AR Camera">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+    <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="style.css">
+  </head>
+  <body>
+    <div id="camera-container"></div>
+
+    <div id="settings-panel">
+      <button id="close-panel-btn">×</button>
+      
+      <h3 id="panel-title">新しいイラストを登録</h3>
+      
+      <div class="setting-item" id="upload-section">
+        <label>1. 画像を選ぶ</label>
+        <input type="file" id="file-input" accept="image/*">
+      </div>
+      
+      <div class="setting-item">
+        <label>2. つける場所</label>
+        <div class="parts-selector">
+          <button class="part-btn active" data-point="1">顔（一緒に動く）</button>
+          <button class="part-btn" data-point="bg">背景（固定される）</button>
+        </div>
+      </div>
+      
+      <div class="setting-item">
+        <label>3. 微調整</label>
+        <div class="slider-row"><p>大きさ:</p><input type="range" id="scale-slider" min="0.5" max="5.0" step="0.1" value="2.4"><button class="reset-icon-btn" id="reset-scale">🔄</button></div>
+        <div class="slider-row"><p>左右:</p><input type="range" id="x-slider" min="-300" max="300" step="10" value="0"><button class="reset-icon-btn" id="reset-x">🔄</button></div>
+        <div class="slider-row"><p>上下:</p><input type="range" id="y-slider" min="-300" max="300" step="10" value="-60"><button class="reset-icon-btn" id="reset-y">🔄</button></div>
+      </div>
+      
+      <button id="add-btn">この設定で追加！</button>
+      
+      <div id="edit-btns">
+        <button id="update-btn">💾 保存</button>
+        <button id="delete-btn">🗑️ 削除</button>
+      </div>
+    </div>
+
+    <button id="open-settings-btn">＋ 追加</button>
+    
+    <button id="switch-camera-btn" title="カメラ切替">
+      <img src="switch_icon.png" alt="カメラ切替">
+    </button>
+    
+    <div id="capture-container-ui">
+      <div class="mode-selector">
+        <span id="mode-photo" class="active">写真</span>
+        <span id="mode-video">動画</span>
+      </div>
+      <div id="shutter-wrapper">
+        <button id="main-shutter-btn"></button>
+      </div>
+    </div>
+
+    <div id="icon-list"></div>
+
+    <script src="sketch.js"></script>
+    <div id="flash-overlay"></div>
+  </body>
+</html>

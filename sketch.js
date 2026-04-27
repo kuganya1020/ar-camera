@@ -79,7 +79,14 @@ function startCamera(facingMode) {
 }
 
 // ↓ sketch.js の中にある draw() をこれに書き換え！
-
+// AIやカメラの読み込みが終わったら、ローディング画面を消す魔法！
+setTimeout(() => {
+  let loader = document.getElementById('loading-screen');
+  if(loader) {
+    loader.style.opacity = '0';
+    setTimeout(() => loader.style.display = 'none', 500);
+  }
+}, 3000); // 3秒後にスッと消える設定（AIの読み込みに合わせて秒数は変えてOK！）
 function draw() {
   background(20);
   if (!video || !video.elt || video.width === 0 || video.height === 0) return;

@@ -1,19 +1,21 @@
 var faceMesh; var video; var faces = []; var images = []; var currentIndex = 0; var isFrontCamera = true; 
 
+// ✨ ピンチズーム用の変数（ここが抜けてたよ！） ✨
+let globalZoom = 1;
+let initialPinchDist = 0;
+let baseZoom = 1;
+
 // ✨ 最初から入っている厳選アセット（合計4枚） ✨
 var defaultAssets = [
-  // --- 顔ハメ（2枚） ---
   { fileName: "mimi.png", scale: 2.4, xOff: 0, yOff: -60, point: 1 },
   { fileName: "hat.png", scale: 2.5, xOff: 0, yOff: -100, point: 1 },
-  
-  // --- 背景（2枚） ---
   { fileName: "sunset.png", scale: 1.0, xOff: 0, yOff: 0, point: 'bg' },
   { fileName: "star.png", scale: 1.0, xOff: 0, yOff: 0, point: 'bg' }
 ];
 
 var assetList = [...defaultAssets];
 
-// ✨ データを「V6」にアップデート！これで過去の記憶を強制リセット！ ✨
+// ✨ データを「V6」にアップデート！ ✨
 let savedAssets = localStorage.getItem('myARCameraData_V6');
 if (savedAssets) { 
   try { 
@@ -57,6 +59,15 @@ function setup() {
   if (switchBtn) {
     switchBtn.onclick = () => { isFrontCamera = !isFrontCamera; startCamera(isFrontCamera ? "user" : "environment"); };
   }
+
+  // ✨ ローディング画面を消す魔法は、setupの中に置くと確実！ ✨
+  setTimeout(() => {
+    let loader = document.getElementById('loading-screen');
+    if(loader) {
+      loader.style.opacity = '0';
+      setTimeout(() => loader.style.display = 'none', 500);
+    }
+  }, 3000); 
 }
 
 function switchMode(mode) {
@@ -78,21 +89,15 @@ function startCamera(facingMode) {
   video.hide();
 }
 
-// ↓ sketch.js の中にある draw() をこれに書き換え！
-// AIやカメラの読み込みが終わったら、ローディング画面を消す魔法！
-setTimeout(() => {
-  let loader = document.getElementById('loading-screen');
-  if(loader) {
-    loader.style.opacity = '0';
-    setTimeout(() => loader.style.display = 'none', 500);
-  }
-}, 3000); // 3秒後にスッと消える設定（AIの読み込みに合わせて秒数は変えてOK！）
 function draw() {
   background(20);
   if (!video || !video.elt || video.width === 0 || video.height === 0) return;
-  let imgScale = max(width / video.width, height / video.height);
+  
+  // ✨ ピンチズームの倍率（globalZoom）をしっかり反映！ ✨
+  let imgScale = max(width / video.width, height / video.height) * globalZoom;
   let vW = video.width * imgScale; let vH = video.height * imgScale;
   let vX = (width - vW) / 2; let vY = (height - vH) / 2;
+  
   push(); if (isFrontCamera) { translate(width, 0); scale(-1, 1); }
   image(video, vX, vY, vW, vH);
   
@@ -101,11 +106,9 @@ function draw() {
   
   if (targetImg) {
     if (targetConfig.point === 'bg') {
-      // ✨ 修正ポイント：背景でもスライダーの数値（scale, xOff, yOff）を反映させる！ ✨
       imageMode(CENTER); 
-      let bgScale = (height / targetImg.height) * targetConfig.scale; // スライダーの大きさを掛ける
+      let bgScale = (height / targetImg.height) * targetConfig.scale; 
       push(); 
-      // スライダーの上下左右のズレを足す
       translate(width/2 + (targetConfig.xOff || 0), height/2 + (targetConfig.yOff || 0)); 
       if (isFrontCamera) scale(-1, 1); 
       image(targetImg, 0, 0, targetImg.width * bgScale, targetImg.height * bgScale); 
@@ -124,6 +127,7 @@ function draw() {
   }
   pop(); 
 }
+
 function createIconList() {
   let iconContainer = select('#icon-list'); if (!iconContainer) return; iconContainer.html(''); 
   for (let i = 0; i < assetList.length; i++) {
@@ -186,7 +190,6 @@ function setupPreviewEvents() {
 }
 
 function saveAndClose() { 
-  // 保存名も「_V6」に！
   localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList)); 
   document.body.classList.remove('split-mode'); 
   previewImg = null; 
@@ -226,10 +229,7 @@ async function saveVideo() {
   }
 }
 
-// ↓ この関数をまるまる上書き！
-
 async function takePhoto() {
-  // ✨ 1. フラッシュを光らせる演出
   let flash = document.getElementById('flash-overlay');
   if (flash) {
     flash.classList.remove('fade');
@@ -240,12 +240,9 @@ async function takePhoto() {
     }, 50);
   }
 
-  // 📸 2. 写真を撮って保存する処理（ここが消えちゃってたはず！）
   let canvasElement = document.querySelector('canvas');
   canvasElement.toBlob(async (blob) => {
     let file = new File([blob], 'ar-photo.png', { type: 'image/png' });
-    
-    // スマホのシェア画面（LINEで送る・画像を保存する画面）が出せるかチェック
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { 
         await navigator.share({ files: [file], title: 'AR写真' }); 
@@ -253,10 +250,27 @@ async function takePhoto() {
         console.log("シェアがキャンセルされました");
       }
     } else {
-      // PCなどの場合は普通にダウンロードフォルダに保存
       saveCanvas('ar-photo-' + Date.now(), 'png');
     }
   }, 'image/png');
 }
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+
+// ✨ ピンチズーム用のジェスチャー魔法（ここも抜けてたよ！） ✨
+function touchStarted() {
+  if (touches.length === 2) {
+    initialPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
+    baseZoom = globalZoom;
+  }
+}
+
+function touchMoved() {
+  if (touches.length === 2) {
+    let currentPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
+    let zoomFactor = currentPinchDist / initialPinchDist;
+    globalZoom = baseZoom * zoomFactor;
+    globalZoom = constrain(globalZoom, 1, 4); 
+    return false; 
+  }
+}

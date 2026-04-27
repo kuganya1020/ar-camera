@@ -1,14 +1,12 @@
 var faceMesh; var video; var faces = []; var images = []; var currentIndex = 0; var isFrontCamera = true; 
 
-// ✨ ピンチズーム＆ドラッグ用の変数 ✨
-let globalZoom = 1;
+// ✨ ジェスチャー用の変数 ✨
 let initialPinchDist = 0;
-let baseZoom = 1;
-let isDragging = false; // ←ここから3行追加！
+let baseStampScale = 1; // カメラではなく「スタンプの基準サイズ」を記憶
+let isDragging = false; 
 let lastTouchX = 0;
 let lastTouchY = 0;
 
-// ✨ 最初から入っている厳選アセット（合計4枚） ✨
 var defaultAssets = [
   { fileName: "mimi.png", scale: 2.4, xOff: 0, yOff: -60, point: 1 },
   { fileName: "hat.png", scale: 2.5, xOff: 0, yOff: -100, point: 1 },
@@ -18,7 +16,6 @@ var defaultAssets = [
 
 var assetList = [...defaultAssets];
 
-// ✨ データを「V6」にアップデート！ ✨
 let savedAssets = localStorage.getItem('myARCameraData_V6');
 if (savedAssets) { 
   try { 
@@ -63,7 +60,6 @@ function setup() {
     switchBtn.onclick = () => { isFrontCamera = !isFrontCamera; startCamera(isFrontCamera ? "user" : "environment"); };
   }
 
-  // ✨ ローディング画面を消す魔法は、setupの中に置くと確実！ ✨
   setTimeout(() => {
     let loader = document.getElementById('loading-screen');
     if(loader) {
@@ -96,8 +92,7 @@ function draw() {
   background(20);
   if (!video || !video.elt || video.width === 0 || video.height === 0) return;
   
-  // ✨ ピンチズームの倍率（globalZoom）をしっかり反映！ ✨
-  let imgScale = max(width / video.width, height / video.height) * globalZoom;
+  let imgScale = max(width / video.width, height / video.height);
   let vW = video.width * imgScale; let vH = video.height * imgScale;
   let vX = (width - vW) / 2; let vY = (height - vH) / 2;
   
@@ -143,13 +138,14 @@ function createIconList() {
   }
 }
 
+// ✨ スライダーリセット処理を削除してスッキリ！ ✨
 function openPanelInAddMode() {
   isEditMode = false; document.getElementById('panel-title').innerText = '新しいイラストを登録';
   document.getElementById('upload-section').style.display = 'block'; 
   document.getElementById('add-btn').style.display = 'block';
   document.getElementById('edit-btns').style.display = 'none'; 
   document.getElementById('file-input').value = "";
-  resetSliders(2.4, 0, -60); previewImg = null;
+  previewImg = null; previewConfig = { scale: 2.4, xOff: 0, yOff: -60, point: 1, fileData: null };
 }
 
 function openPanelInEditMode(index) {
@@ -158,13 +154,8 @@ function openPanelInEditMode(index) {
   document.getElementById('upload-section').style.display = 'none'; 
   document.getElementById('add-btn').style.display = 'none';
   document.getElementById('edit-btns').style.display = 'flex'; 
-  let d = assetList[index]; resetSliders(d.scale, d.xOff || 0, d.yOff || 0);
+  let d = assetList[index]; 
   previewImg = images[index]; previewConfig = { ...d }; originalConfig = { ...d }; 
-}
-
-function resetSliders(s, x, y) {
-  document.getElementById('scale-slider').value = s; document.getElementById('x-slider').value = x; document.getElementById('y-slider').value = y;
-  previewConfig.scale = s; previewConfig.xOff = x; previewConfig.yOff = y;
 }
 
 function setupPreviewEvents() {
@@ -174,12 +165,6 @@ function setupPreviewEvents() {
   document.querySelectorAll('.part-btn').forEach(btn => {
     btn.onclick = (e) => { document.querySelectorAll('.part-btn').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); previewConfig.point = e.target.getAttribute('data-point'); };
   });
-  document.getElementById('scale-slider').oninput = (e) => previewConfig.scale = parseFloat(e.target.value);
-  document.getElementById('x-slider').oninput = (e) => previewConfig.xOff = parseFloat(e.target.value);
-  document.getElementById('y-slider').oninput = (e) => previewConfig.yOff = parseFloat(e.target.value);
-  document.getElementById('reset-scale').onclick = () => resetSliders(isEditMode ? originalConfig.scale : 2.4, previewConfig.xOff, previewConfig.yOff);
-  document.getElementById('reset-x').onclick = () => resetSliders(previewConfig.scale, isEditMode ? originalConfig.xOff : 0, previewConfig.yOff);
-  document.getElementById('reset-y').onclick = () => resetSliders(previewConfig.scale, previewConfig.xOff, isEditMode ? originalConfig.yOff : -60);
   
   document.getElementById('add-btn').onclick = () => { 
     if(!previewImg) return alert("画像を選んでね！"); assetList.push({...previewConfig}); images.push(previewImg); saveAndClose(); 
@@ -260,22 +245,22 @@ async function takePhoto() {
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 
-// ✨ ピンチズーム用のジェスチャー魔法（ここも抜けてたよ！） ✨
-// 👇 ファイルの一番下にあるジェスチャー魔法をこれにまるごと書き換え！
-// 👇 修正版！ UIを触っている時は邪魔しない賢いジェスチャー処理
-
+// ✨ スライダー不要！指だけでスタンプを完璧に操るジェスチャー ✨
 function touchStarted(event) {
-  // 🚨 修正ポイント：キャンバス（映像）以外の場所（ボタンやスライダー）を触った時は無視！
+  // UI（ボタンやアイコン）を触った時は無視！
   if (event && event.target && event.target.tagName !== 'CANVAS') {
-    isDragging = false;
-    return; // スライダーやスワイプをそのまま動作させる
+    isDragging = false; return;
   }
+  
+  let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
 
   if (touches.length === 2) {
+    // ✌️ 2本指なら「スタンプの拡大縮小」の準備
     initialPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
-    baseZoom = globalZoom;
+    baseStampScale = targetConfig ? (targetConfig.scale || 1) : 1;
     isDragging = false; 
   } else if (touches.length === 1 || mouseIsPressed) {
+    // 👆 1本指なら「スタンプの移動」の準備
     isDragging = true;
     lastTouchX = touches.length > 0 ? touches[0].x : mouseX;
     lastTouchY = touches.length > 0 ? touches[0].y : mouseY;
@@ -283,37 +268,28 @@ function touchStarted(event) {
 }
 
 function touchMoved(event) {
-  // 🚨 修正ポイント：同じく、UI操作中は無視！
-  if (event && event.target && event.target.tagName !== 'CANVAS') {
-    return; 
-  }
+  if (event && event.target && event.target.tagName !== 'CANVAS') return; 
+
+  let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
+  if (!targetConfig) return;
 
   if (touches.length === 2) {
+    // ✌️ ピンチでスタンプの大きさを変える！
     let currentPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
     let zoomFactor = currentPinchDist / initialPinchDist;
-    globalZoom = baseZoom * zoomFactor;
-    globalZoom = constrain(globalZoom, 1, 4); 
+    targetConfig.scale = baseStampScale * zoomFactor;
     return false; 
   } else if (isDragging) {
+    // 👆 スワイプでスタンプを移動させる！
     let currentX = touches.length > 0 ? touches[0].x : mouseX;
     let currentY = touches.length > 0 ? touches[0].y : mouseY;
-
-    let dx = (currentX - lastTouchX) / globalZoom;
-    let dy = (currentY - lastTouchY) / globalZoom;
+    let dx = currentX - lastTouchX;
+    let dy = currentY - lastTouchY;
     if (isFrontCamera) dx = -dx;
 
-    let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
-    if (targetConfig) {
-      targetConfig.xOff = (targetConfig.xOff || 0) + dx;
-      targetConfig.yOff = (targetConfig.yOff || 0) + dy;
+    targetConfig.xOff = (targetConfig.xOff || 0) + dx;
+    targetConfig.yOff = (targetConfig.yOff || 0) + dy;
 
-      let xSlider = document.getElementById('x-slider');
-      let ySlider = document.getElementById('y-slider');
-      if (xSlider && ySlider) {
-        xSlider.value = targetConfig.xOff;
-        ySlider.value = targetConfig.yOff;
-      }
-    }
     lastTouchX = currentX;
     lastTouchY = currentY;
     return false; 
@@ -321,13 +297,11 @@ function touchMoved(event) {
 }
 
 function touchEnded() {
-  if (isDragging) {
+  if (isDragging || touches.length === 0) {
     isDragging = false;
-    // 👆 指を離した瞬間に、その位置をこっそりポケット（LocalStorage）に保存しておく！
+    // 指を離した瞬間に変更を保存
     localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList));
   }
 }
 
-function mouseReleased() {
-  touchEnded();
-}
+function mouseReleased() { touchEnded(); }

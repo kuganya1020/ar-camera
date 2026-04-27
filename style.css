@@ -1,130 +1,93 @@
 /* --- 1. 画面全体の基本設定 --- */
 body {
-  display: flex; margin: 0; overflow: hidden; background-color: #1A2232; /* 深みのあるネイビーベース */
-  font-family: 'Noto Sans JP', sans-serif; font-weight: 900; color: #1A2232; touch-action: none;
+  display: flex; margin: 0; overflow: hidden; background-color: #000;
+  font-family: 'Noto Sans JP', sans-serif; font-weight: 900; color: #5C4033; touch-action: none;
 }
 
 /* --- 2. カメラエリア --- */
 #camera-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; }
 canvas { display: block; width: 100% !important; height: 100% !important; object-fit: cover; }
 
-/* --- 3. 設定パネル（サンドベージュ基調のフラットデザイン） --- */
+/* --- 3. 設定パネル（ピンクのガラス風！） --- */
 #settings-panel {
   display: none; width: 400px; height: 100vh; position: fixed; top: 0; right: 0;
-  background: #EFECE5; /* サンドベージュ */
-  padding: 30px; box-sizing: border-box; overflow-y: auto; z-index: 2000;
-  border-left: 2px solid #1A2232; /* 影の代わりにネイビーのラインで区切る */
+  background: rgba(255, 182, 193, 0.7); backdrop-filter: blur(25px) saturate(160%); -webkit-backdrop-filter: blur(25px) saturate(160%);
+  padding: 30px; box-sizing: border-box; overflow-y: auto; border-left: 1.5px solid rgba(255, 255, 255, 0.5); z-index: 2000;
 }
 
 #close-panel-btn {
   position: absolute; top: 15px; right: 15px; width: 40px; height: 40px;
-  background: #E5A93B; /* マスタード */
-  border: 2px solid #1A2232; border-radius: 50%;
-  font-size: 24px; color: #1A2232; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 2100;
+  background: rgba(255, 255, 255, 0.5); border: none; border-radius: 50%;
+  font-size: 24px; color: #5C4033; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 2100;
 }
-#close-panel-btn:active { transform: scale(0.9); }
+#close-panel-btn:active { transform: scale(0.9); background: rgba(255, 255, 255, 0.8); }
 
 #switch-camera-btn {
-  position: fixed; top: 15px; right: 15px; width: 48px; height: 48px;
-  background: #EFECE5; border: 2px solid #1A2232; border-radius: 50%;
-  cursor: pointer; z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 8px;
+  position: fixed; top: 15px; right: 15px; width: 44px; height: 44px;
+  background: none; border: none; cursor: pointer; z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 0;
 }
 #switch-camera-btn img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-#switch-camera-btn:active { transform: scale(0.9); background: #E5A93B; }
+#switch-camera-btn:active { transform: scale(0.9); }
 
 /* --- 4. パネル内の項目 --- */
-.setting-item { 
-  margin-bottom: 20px; background: #FFFFFF; padding: 15px; 
-  border: 2px solid #1A2232; border-radius: 16px; /* 影なし、丸み統一 */
-}
-.part-btn { 
-  background: #EFECE5; border: 2px solid #1A2232; color: #1A2232; 
-  padding: 10px; border-radius: 999px; /* ピル型 */
-  cursor: pointer; font-family: inherit; font-weight: bold; width: 100%; margin-bottom: 8px; 
-}
-.part-btn.active { background: #1E5631; /* 深い緑 */ color: #FFFFFF; border-color: #1E5631; }
-
+.setting-item { margin-bottom: 20px; background: rgba(135, 206, 250, 0.4); padding: 15px; border: 1.5px solid rgba(255, 255, 255, 0.5); border-radius: 20px; }
+.part-btn { background: rgba(255, 255, 255, 0.3); border: 1px solid rgba(255, 255, 255, 0.5); color: #5C4033; padding: 10px; border-radius: 12px; cursor: pointer; font-family: inherit; font-weight: bold; width: 100%; margin-bottom: 5px; }
+.part-btn.active { background: rgba(224, 255, 255, 0.9); border: 2px solid #3CB371; color: #2E8B57; }
 .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
 .slider-row p { margin: 0; min-width: 50px; font-size: 12px; }
-input[type="range"] { flex-grow: 1; accent-color: #E5A93B; }
+input[type="range"] { flex-grow: 1; accent-color: #FF69B4; }
 .reset-icon-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0 5px; }
 
 /* --- 5. 追加・保存・削除ボタン系 --- */
 #open-settings-btn {
-  position: fixed; bottom: 40px; left: 20px; padding: 14px 24px; 
-  background: #EFECE5; color: #1A2232; border: 2px solid #1A2232; border-radius: 999px; 
-  font-family: inherit; font-weight: bold; cursor: pointer; z-index: 1000;
+  position: fixed; bottom: 40px; left: 20px; padding: 12px 20px; background: #FF69B4; color: white; border: none; border-radius: 25px; font-family: inherit; font-weight: bold; cursor: pointer; z-index: 1000;
 }
-#open-settings-btn:active { background: #E5A93B; }
-
-#add-btn { 
-  width: 100%; padding: 15px; border-radius: 999px; border: 2px solid #1A2232; 
-  background: #E5A93B; color: #1A2232; font-weight: bold; font-family: inherit; cursor: pointer; 
-}
+#add-btn { width: 100%; padding: 15px; border-radius: 15px; border: none; background: #FF69B4; color: white; font-weight: bold; font-family: inherit; cursor: pointer; }
 #edit-btns { display: none; gap: 12px; margin-top: 10px; width: 100%; }
 #edit-btns.show-flex { display: flex; }
-#update-btn, #delete-btn { 
-  flex: 1; padding: 15px 0; border-radius: 999px; border: 2px solid #1A2232; 
-  font-size: 16px; font-weight: bold; font-family: inherit; cursor: pointer; display: flex; justify-content: center; align-items: center; white-space: nowrap; 
-}
-#update-btn { background: #E5A93B; color: #1A2232; }
-#delete-btn { background: #E76F51; /* テラコッタ系の赤 */ color: #FFF; border-color: #E76F51; }
+#update-btn, #delete-btn { flex: 1; padding: 15px 0; border-radius: 15px; border: none; font-size: 16px; font-weight: bold; font-family: inherit; cursor: pointer; display: flex; justify-content: center; align-items: center; white-space: nowrap; }
+#update-btn { background: #FF69B4; color: white; }
+#delete-btn { background: #ff4757; color: white; }
 
 /* --- 6. アイコンリスト（スタンプ一覧） --- */
 #icon-list {
-  position: fixed; bottom: 140px; left: 0; width: 100%;
+  position: fixed; bottom: 130px; left: 0; width: 100%;
   display: flex; gap: 15px; overflow-x: auto; padding: 10px 20px; z-index: 1000;
 }
 .filter-icon {
-  position: relative; width: 60px; height: 60px; min-width: 60px;
-  border-radius: 16px; /* 丸ではなく少し角丸の四角に */
-  border: 2px solid #EFECE5; background-color: #FFF; background-size: cover; background-position: center;
+  position: relative; width: 65px; height: 65px; min-width: 65px;
+  border-radius: 50%; border: 3px solid #FFF; background-size: cover; background-position: center;
 }
-.filter-icon.active { border-color: #E5A93B; border-width: 3px; transform: scale(1.05); }
-.edit-badge { 
-  position: absolute; top: -8px; right: -8px; background: #1A2232; color: #FFF;
-  border-radius: 50%; width: 26px; height: 26px; display: none; justify-content: center; align-items: center; font-size: 12px; border: 2px solid #EFECE5;
-}
+.filter-icon.active { border-color: #3CB371; transform: scale(1.1); }
+.edit-badge { position: absolute; top: -5px; right: -5px; background: #87CEFA; border-radius: 50%; width: 24px; height: 24px; display: none; justify-content: center; align-items: center; font-size: 12px; }
 .filter-icon.active .edit-badge { display: flex; }
 
 /* --- 7. オシャレなモード切替UI（写真/動画） --- */
 #capture-container-ui {
-  position: fixed; bottom: 35px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 1000;
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 1000;
 }
-.mode-selector { display: flex; gap: 20px; color: #EFECE5; font-size: 14px; font-weight: bold; letter-spacing: 1px; }
-.mode-selector span { cursor: pointer; transition: 0.3s; opacity: 0.6; }
-.mode-selector span.active { opacity: 1; color: #E5A93B; transform: scale(1.1); }
-
-/* シャッターボタンをレトロポップに */
-#shutter-wrapper { 
-  width: 80px; height: 80px; border: 3px solid #EFECE5; border-radius: 50%; 
-  display: flex; justify-content: center; align-items: center; padding: 4px; box-sizing: border-box; 
-}
-#main-shutter-btn { 
-  width: 100%; height: 100%; background: #EFECE5; border: none; border-radius: 50%; 
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; 
-}
-body.mode-video-active #main-shutter-btn { background: #E76F51; }
-#main-shutter-btn.recording { transform: scale(0.5); border-radius: 12px; background: #E76F51; }
+.mode-selector { display: flex; gap: 20px; color: rgba(255, 255, 255, 0.6); font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+.mode-selector span { cursor: pointer; transition: 0.3s; }
+.mode-selector span.active { color: #FFEB3B; transform: scale(1.2); }
+#shutter-wrapper { width: 80px; height: 80px; border: 4px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; padding: 4px; box-sizing: border-box; }
+#main-shutter-btn { width: 100%; height: 100%; background: white; border: none; border-radius: 50%; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; }
+body.mode-video-active #main-shutter-btn { background: #ff4757; }
+#main-shutter-btn.recording { transform: scale(0.6); border-radius: 8px; background: #ff4757; }
 
 /* 🌟 スマホ対応：下3分の1パネル 🌟 */
 @media screen and (max-width: 768px) {
-  #settings-panel { 
-    width: 100% !important; height: 40vh !important; top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important; 
-    border-radius: 24px 24px 0 0; border-left: none; border-top: 2px solid #1A2232; padding: 20px 15px; 
-  }
-  #close-panel-btn { top: -20px; right: 20px; width: 40px; height: 40px; } /* パネルからはみ出す可愛い配置に */
+  #settings-panel { width: 100% !important; height: 35vh !important; top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important; border-radius: 30px 30px 0 0; border-left: none; border-top: 1.5px solid rgba(255, 255, 255, 0.5); padding: 20px 15px; }
+  #close-panel-btn { top: 15px; right: 15px; width: 35px; height: 35px; font-size: 20px; }
 }
 
 /* パネル開いた時は各種ボタンを隠す */
 body.split-mode #capture-container-ui, body.split-mode #icon-list, body.split-mode #switch-camera-btn, body.split-mode #open-settings-btn { display: none; }
 body.split-mode #settings-panel { display: block; }
+
 /* 📸 フラッシュ演出 */
 #flash-overlay {
   position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
   background: white; opacity: 0; pointer-events: none; z-index: 9999;
 }
-/* activeクラスがついた瞬間、一瞬で真っ白にする */
 #flash-overlay.active { opacity: 1; transition: none; }
-/* そのあと、ゆっくり透明に戻る */
 #flash-overlay.fade { opacity: 0; transition: opacity 0.5s ease-out; }

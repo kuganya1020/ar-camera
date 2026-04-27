@@ -104,3 +104,7 @@ body.split-mode #settings-panel { display: block; }
   animation: spin 1s linear infinite; margin-bottom: 20px;
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+/* ✨ スマホのスワイプとスライダー操作を復活させる魔法 ✨ */
+#icon-list, #settings-panel, input[type="range"] {
+  touch-action: auto !important;
+}

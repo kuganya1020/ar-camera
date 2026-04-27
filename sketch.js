@@ -262,49 +262,51 @@ function windowResized() { resizeCanvas(windowWidth, windowHeight); }
 
 // ✨ ピンチズーム用のジェスチャー魔法（ここも抜けてたよ！） ✨
 // 👇 ファイルの一番下にあるジェスチャー魔法をこれにまるごと書き換え！
+// 👇 修正版！ UIを触っている時は邪魔しない賢いジェスチャー処理
 
-function touchStarted() {
+function touchStarted(event) {
+  // 🚨 修正ポイント：キャンバス（映像）以外の場所（ボタンやスライダー）を触った時は無視！
+  if (event && event.target && event.target.tagName !== 'CANVAS') {
+    isDragging = false;
+    return; // スライダーやスワイプをそのまま動作させる
+  }
+
   if (touches.length === 2) {
-    // ✌️ 2本指ならズームの準備！
     initialPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
     baseZoom = globalZoom;
     isDragging = false; 
   } else if (touches.length === 1 || mouseIsPressed) {
-    // 👆 1本指（またはPCのマウスクリック）なら移動の準備！
     isDragging = true;
     lastTouchX = touches.length > 0 ? touches[0].x : mouseX;
     lastTouchY = touches.length > 0 ? touches[0].y : mouseY;
   }
 }
 
-function touchMoved() {
+function touchMoved(event) {
+  // 🚨 修正ポイント：同じく、UI操作中は無視！
+  if (event && event.target && event.target.tagName !== 'CANVAS') {
+    return; 
+  }
+
   if (touches.length === 2) {
-    // ✌️ ズームの計算
     let currentPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
     let zoomFactor = currentPinchDist / initialPinchDist;
     globalZoom = baseZoom * zoomFactor;
     globalZoom = constrain(globalZoom, 1, 4); 
     return false; 
   } else if (isDragging) {
-    // 👆 スタンプ移動の計算
     let currentX = touches.length > 0 ? touches[0].x : mouseX;
     let currentY = touches.length > 0 ? touches[0].y : mouseY;
 
-    // ズームされている分も考慮して、実際の移動距離を割り出す
     let dx = (currentX - lastTouchX) / globalZoom;
     let dy = (currentY - lastTouchY) / globalZoom;
-
-    // インカメラ（鏡モード）の時は、左右の動きを反転させると自然！
     if (isFrontCamera) dx = -dx;
 
-    // 編集画面ならプレビューを、そうじゃないなら今のスタンプを直接動かす
     let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
-
     if (targetConfig) {
       targetConfig.xOff = (targetConfig.xOff || 0) + dx;
       targetConfig.yOff = (targetConfig.yOff || 0) + dy;
 
-      // もし設定パネルが開いていたら、スライダーのツマミも「魔法のように」連動して動かす！
       let xSlider = document.getElementById('x-slider');
       let ySlider = document.getElementById('y-slider');
       if (xSlider && ySlider) {
@@ -312,10 +314,9 @@ function touchMoved() {
         ySlider.value = targetConfig.yOff;
       }
     }
-
     lastTouchX = currentX;
     lastTouchY = currentY;
-    return false; // 画面全体がスクロールしちゃうのを防ぐ
+    return false; 
   }
 }
 

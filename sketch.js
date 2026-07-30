@@ -22,7 +22,7 @@ let currentDeviceId = "";
 let faces = [];
 let assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset }));
 let images = new Map();
-let currentIndex = 0;
+let currentIndex = 1;
 let currentMode = "photo";
 let isFrontCamera = true;
 let isRecording = false;
@@ -82,7 +82,7 @@ function draw() {
 
   const sourceWidth = video.elt.videoWidth || 720;
   const sourceHeight = video.elt.videoHeight || 1280;
-  const cover = Math.min(width / sourceWidth, height / sourceHeight);
+  const cover = Math.max(width / sourceWidth, height / sourceHeight);
   const drawWidth = sourceWidth * cover;
   const drawHeight = sourceHeight * cover;
   const drawX = (width - drawWidth) / 2;
@@ -200,9 +200,12 @@ function beginFaceDetection() {
 }
 
 async function getCameraStream(facingMode) {
+  const screenRatio = Math.min(windowWidth, windowHeight) / Math.max(windowWidth, windowHeight);
+  const portrait = windowHeight >= windowWidth;
   const baseVideo = {
-    width: { ideal: 720, max: 1280 },
-    height: { ideal: 1280, max: 1280 },
+    width: { ideal: portrait ? 720 : 1280, max: 1280 },
+    height: { ideal: portrait ? 1280 : 720, max: 1280 },
+    aspectRatio: { ideal: portrait ? screenRatio : 1 / screenRatio },
     frameRate: { ideal: 24, max: 30 }
   };
 

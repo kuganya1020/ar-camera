@@ -356,14 +356,17 @@ body.video-mode #audio-note { display: block; }
 }
 #loading-screen p { margin: 0; color: var(--muted); font-size: 13px; }
 .spinner {
-  width: 26px;
-  height: 26px;
-  border: 2px solid rgba(255,255,255,.2);
-  border-top-color: #fff;
+  width: 10px;
+  height: 10px;
+  border: 0;
+  background: rgba(255,255,255,.82);
   border-radius: 50%;
-  animation: spin 1.4s linear infinite;
+  animation: loading-pulse 1.6s ease-in-out infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes loading-pulse {
+  0%, 100% { opacity: .28; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
 
 #flash-overlay {
   position: fixed;

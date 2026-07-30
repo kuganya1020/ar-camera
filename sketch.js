@@ -32,6 +32,7 @@ let recordingStream;
 let timerInterval;
 let recordingStartedAt = 0;
 let detectionSession = 0;
+let faceDetectionActive = false;
 let modelReady = false;
 let cameraReady = false;
 let editingIndex = -1;
@@ -190,6 +191,7 @@ function beginFaceDetection() {
   if (!faceMesh || !video || !cameraReady) return;
   const session = ++detectionSession;
   try {
+    faceDetectionActive = true;
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
         faces = Array.isArray(results) ? results.slice(0, 5) : [];
@@ -201,6 +203,7 @@ function beginFaceDetection() {
       }
     });
   } catch {
+    faceDetectionActive = false;
     setStatus("顔認識を開始できませんでした");
   }
 }
@@ -228,10 +231,13 @@ async function getCameraConstraints(facingMode) {
 function stopFaceDetection() {
   detectionSession += 1;
   faces = [];
+  if (!faceDetectionActive) return;
   try {
     if (faceMesh?.detectStop) faceMesh.detectStop();
   } catch {
     // 古いml5実装では停止済みの呼び出しが例外になる場合がある。
+  } finally {
+    faceDetectionActive = false;
   }
 }
 

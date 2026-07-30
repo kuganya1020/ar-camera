@@ -2,8 +2,8 @@
 
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
-  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
-  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: -100 },
+  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1.15, xOff: 0, yOff: -45 },
+  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 1.2, xOff: 0, yOff: -70 },
   { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
   { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
 ];
@@ -18,6 +18,7 @@ const MAX_UPLOAD_PIXELS = 1600000;
 let faceMesh;
 let video;
 let cameraStream;
+let currentDeviceId = "";
 let faces = [];
 let assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset }));
 let images = new Map();
@@ -45,7 +46,7 @@ let dragOrigin = null;
 let pinchOrigin = null;
 
 function preload() {
-  faceMesh = ml5.faceMesh({ maxFaces: 1, flipHorizontal: false });
+  faceMesh = ml5.faceMesh({ maxFaces: 5, flipHorizontal: false });
   modelReady = true;
   for (const asset of DEFAULT_ASSETS) {
     if (asset.fileName) {
@@ -104,7 +105,9 @@ function draw() {
   if (config.point === "bg") {
     drawBackgroundStamp(stamp, config);
   } else if (faces.length) {
-    drawFaceStamp(stamp, config, faces[0], cover, drawX, drawY);
+    for (const face of faces.slice(0, 5)) {
+      drawFaceStamp(stamp, config, face, cover, drawX, drawY);
+    }
   }
 }
 
@@ -153,15 +156,9 @@ async function startCamera(facingMode) {
   }
 
   try {
-    cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: facingMode },
-        width: { ideal: 720, max: 1280 },
-        height: { ideal: 1280, max: 1280 },
-        frameRate: { ideal: 24, max: 30 }
-      },
-      audio: false
-    });
+    cameraStream = await getCameraStream(facingMode);
+    const activeTrack = cameraStream.getVideoTracks()[0];
+    currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
 
     video = createVideo([]);
     video.hide();
@@ -171,6 +168,7 @@ async function startCamera(facingMode) {
     video.elt.setAttribute("playsinline", "");
     video.elt.srcObject = cameraStream;
     await video.elt.play();
+    video.size(video.elt.videoWidth || 720, video.elt.videoHeight || 1280);
 
     cameraReady = true;
     hideLoader();
@@ -193,11 +191,53 @@ function beginFaceDetection() {
   try {
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
-        faces = Array.isArray(results) ? results.slice(0, 1) : [];
+        faces = Array.isArray(results) ? results.slice(0, 5) : [];
       }
     });
   } catch {
     setStatus("顔認識を開始できませんでした");
+  }
+}
+
+async function getCameraStream(facingMode) {
+  const baseVideo = {
+    width: { ideal: 720, max: 1280 },
+    height: { ideal: 1280, max: 1280 },
+    frameRate: { ideal: 24, max: 30 }
+  };
+
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  const cameras = devices.filter((device) => device.kind === "videoinput");
+  const frontPattern = /(front|user|facetime|前面)/i;
+  const backPattern = /(back|rear|environment|背面|外側)/i;
+  const pattern = facingMode === "user" ? frontPattern : backPattern;
+  let target = cameras.find((camera) => pattern.test(camera.label));
+
+  if (!target && cameras.length > 1) {
+    target = cameras.find((camera) => camera.deviceId && camera.deviceId !== currentDeviceId);
+  }
+
+  if (target?.deviceId) {
+    try {
+      return await navigator.mediaDevices.getUserMedia({
+        video: { ...baseVideo, deviceId: { exact: target.deviceId } },
+        audio: false
+      });
+    } catch {
+      // デバイスID指定が拒否された場合はfacingModeへフォールバックする。
+    }
+  }
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: { ...baseVideo, facingMode: { exact: facingMode } },
+      audio: false
+    });
+  } catch {
+    return navigator.mediaDevices.getUserMedia({
+      video: { ...baseVideo, facingMode: { ideal: facingMode } },
+      audio: false
+    });
   }
 }
 
@@ -334,7 +374,7 @@ function selectEffect(index) {
 
 function openAddSheet() {
   editingIndex = -1;
-  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.2, xOff: 0, yOff: -40, custom: true };
+  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 1, xOff: 0, yOff: -40, custom: true };
   draftImage = null;
   byId("panel-title").textContent = "エフェクトを追加";
   byId("upload-section").hidden = false;

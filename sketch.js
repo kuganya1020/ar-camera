@@ -82,9 +82,9 @@ function draw() {
 
   const sourceWidth = video.elt.videoWidth || 720;
   const sourceHeight = video.elt.videoHeight || 1280;
-  const cover = Math.max(width / sourceWidth, height / sourceHeight);
-  const drawWidth = sourceWidth * cover;
-  const drawHeight = sourceHeight * cover;
+  const containScale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * containScale;
+  const drawHeight = sourceHeight * containScale;
   const drawX = (width - drawWidth) / 2;
   const drawY = (height - drawHeight) / 2;
 
@@ -106,7 +106,7 @@ function draw() {
     drawBackgroundStamp(stamp, config);
   } else if (faces.length) {
     for (const face of faces.slice(0, 5)) {
-      drawFaceStamp(stamp, config, face, cover, drawX, drawY);
+      drawFaceStamp(stamp, config, face, containScale, drawX, drawY);
     }
   }
 }
@@ -124,15 +124,15 @@ function drawBackgroundStamp(stamp, config) {
   imageMode(CORNER);
 }
 
-function drawFaceStamp(stamp, config, face, cover, drawX, drawY) {
+function drawFaceStamp(stamp, config, face, videoScale, drawX, drawY) {
   if (!face.keypoints || !face.keypoints[1] || !face.keypoints[234] || !face.keypoints[454]) return;
   const anchor = face.keypoints[1];
   const left = face.keypoints[234];
   const right = face.keypoints[454];
-  let x = drawX + anchor.x * cover;
+  let x = drawX + anchor.x * videoScale;
   if (isFrontCamera) x = width - x;
-  const y = drawY + anchor.y * cover;
-  const faceWidth = Math.abs(right.x - left.x) * cover;
+  const y = drawY + anchor.y * videoScale;
+  const faceWidth = Math.abs(right.x - left.x) * videoScale;
   const stampWidth = faceWidth * clamp(config.scale, .2, 6);
   const stampHeight = stampWidth * (stamp.height / stamp.width);
 

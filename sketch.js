@@ -83,67 +83,60 @@ function draw() {
 
   const sourceWidth = video.width || video.elt.videoWidth || width;
   const sourceHeight = video.height || video.elt.videoHeight || height;
-  const previewScale = Math.max(width / sourceWidth, height / sourceHeight);
-  const drawWidth = sourceWidth * previewScale;
-  const drawHeight = sourceHeight * previewScale;
-  const drawX = (width - drawWidth) / 2;
-  const drawY = (height - drawHeight) / 2;
+  const imageScale = Math.max(width / sourceWidth, height / sourceHeight);
+  const videoWidth = sourceWidth * imageScale;
+  const videoHeight = sourceHeight * imageScale;
+  const videoX = (width - videoWidth) / 2;
+  const videoY = (height - videoHeight) / 2;
 
   push();
   if (isFrontCamera) {
     translate(width, 0);
     scale(-1, 1);
-    image(video, drawX, drawY, drawWidth, drawHeight);
-  } else {
-    image(video, drawX, drawY, drawWidth, drawHeight);
   }
-  pop();
+  image(video, videoX, videoY, videoWidth, videoHeight);
 
   const config = draftConfig || assetList[currentIndex];
   const stamp = draftImage || getAssetImage(config);
-  if (!config || config.point === "none" || !stamp) return;
+  if (config && config.point !== "none" && stamp) {
+    if (config.point === "bg") {
+      const backgroundScale = (height / stamp.height) * clamp(config.scale, .2, 6);
+      imageMode(CENTER);
+      push();
+      translate(
+        width / 2 + numberOrZero(config.xOff),
+        height / 2 + numberOrZero(config.yOff)
+      );
+      if (isFrontCamera) scale(-1, 1);
+      image(stamp, 0, 0, stamp.width * backgroundScale, stamp.height * backgroundScale);
+      pop();
+      imageMode(CORNER);
+    } else {
+      for (const face of faces.slice(0, 5)) {
+        if (!face.keypoints?.[1] || !face.keypoints?.[234] || !face.keypoints?.[454]) continue;
+        const anchor = face.keypoints[1];
+        const left = face.keypoints[234];
+        const right = face.keypoints[454];
+        const targetX = videoX + anchor.x * imageScale;
+        const targetY = videoY + anchor.y * imageScale;
+        const faceWidth = Math.abs(right.x - left.x) * imageScale;
+        const stampWidth = faceWidth * clamp(config.scale, .2, 6);
+        const stampHeight = stampWidth * (stamp.height / stamp.width);
 
-  if (config.point === "bg") {
-    drawBackgroundStamp(stamp, config);
-  } else if (faces.length) {
-    for (const face of faces.slice(0, 5)) {
-      drawFaceStamp(stamp, config, face, drawWidth, drawHeight, drawX, drawY);
+        imageMode(CENTER);
+        push();
+        translate(
+          targetX + numberOrZero(config.xOff),
+          targetY + numberOrZero(config.yOff)
+        );
+        if (isFrontCamera) scale(-1, 1);
+        image(stamp, 0, 0, stampWidth, stampHeight);
+        pop();
+        imageMode(CORNER);
+      }
     }
   }
-}
-
-function drawBackgroundStamp(stamp, config) {
-  const scaleToCover = Math.max(width / stamp.width, height / stamp.height) * clamp(config.scale, .2, 6);
-  imageMode(CENTER);
-  image(
-    stamp,
-    width / 2 + numberOrZero(config.xOff),
-    height / 2 + numberOrZero(config.yOff),
-    stamp.width * scaleToCover,
-    stamp.height * scaleToCover
-  );
-  imageMode(CORNER);
-}
-
-function drawFaceStamp(stamp, config, face, displayedWidth, displayedHeight, drawX, drawY) {
-  if (!face.keypoints || !face.keypoints[1] || !face.keypoints[234] || !face.keypoints[454]) return;
-  const anchor = face.keypoints[1];
-  const left = face.keypoints[234];
-  const right = face.keypoints[454];
-  const detectionWidth = video.width || video.elt.videoWidth || displayedWidth;
-  const detectionHeight = video.height || video.elt.videoHeight || displayedHeight;
-  const scaleX = displayedWidth / detectionWidth;
-  const scaleY = displayedHeight / detectionHeight;
-  let x = drawX + anchor.x * scaleX;
-  if (isFrontCamera) x = width - x;
-  const y = drawY + anchor.y * scaleY;
-  const faceWidth = Math.abs(right.x - left.x) * scaleX;
-  const stampWidth = faceWidth * clamp(config.scale, .2, 6);
-  const stampHeight = stampWidth * (stamp.height / stamp.width);
-
-  imageMode(CENTER);
-  image(stamp, x + numberOrZero(config.xOff), y + numberOrZero(config.yOff), stampWidth, stampHeight);
-  imageMode(CORNER);
+  pop();
 }
 
 async function startCamera(facingMode) {

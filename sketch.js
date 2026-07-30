@@ -82,7 +82,7 @@ function draw() {
 
   const sourceWidth = video.elt.videoWidth || 720;
   const sourceHeight = video.elt.videoHeight || 1280;
-  const cover = Math.max(width / sourceWidth, height / sourceHeight);
+  const cover = Math.min(width / sourceWidth, height / sourceHeight);
   const drawWidth = sourceWidth * cover;
   const drawHeight = sourceHeight * cover;
   const drawX = (width - drawWidth) / 2;

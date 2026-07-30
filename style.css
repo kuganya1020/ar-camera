@@ -361,7 +361,7 @@ body.video-mode #audio-note { display: block; }
   border: 2px solid rgba(255,255,255,.2);
   border-top-color: #fff;
   border-radius: 50%;
-  animation: spin .7s linear infinite;
+  animation: spin 1.4s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 

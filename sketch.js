@@ -2,8 +2,8 @@
 
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
-  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1.15, xOff: 0, yOff: -45 },
-  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 1.2, xOff: 0, yOff: -70 },
+  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
+  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: -100 },
   { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
   { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
 ];
@@ -371,7 +371,7 @@ function selectEffect(index) {
 
 function openAddSheet() {
   editingIndex = -1;
-  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 1, xOff: 0, yOff: -40, custom: true };
+  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.4, xOff: 0, yOff: -60, custom: true };
   draftImage = null;
   byId("panel-title").textContent = "エフェクトを追加";
   byId("upload-section").hidden = false;

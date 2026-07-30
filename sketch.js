@@ -83,60 +83,102 @@ function draw() {
 
   const sourceWidth = video.width || video.elt.videoWidth || width;
   const sourceHeight = video.height || video.elt.videoHeight || height;
-  const imageScale = Math.max(width / sourceWidth, height / sourceHeight);
-  const videoWidth = sourceWidth * imageScale;
-  const videoHeight = sourceHeight * imageScale;
-  const videoX = (width - videoWidth) / 2;
-  const videoY = (height - videoHeight) / 2;
+  const previewScale = Math.max(width / sourceWidth, height / sourceHeight);
+  const frame = {
+    x: (width - sourceWidth * previewScale) / 2,
+    y: (height - sourceHeight * previewScale) / 2,
+    width: sourceWidth * previewScale,
+    height: sourceHeight * previewScale
+  };
 
   push();
   if (isFrontCamera) {
     translate(width, 0);
     scale(-1, 1);
   }
-  image(video, videoX, videoY, videoWidth, videoHeight);
+  image(video, frame.x, frame.y, frame.width, frame.height);
+  pop();
 
   const config = draftConfig || assetList[currentIndex];
   const stamp = draftImage || getAssetImage(config);
-  if (config && config.point !== "none" && stamp) {
-    if (config.point === "bg") {
-      const backgroundScale = (height / stamp.height) * clamp(config.scale, .2, 6);
-      imageMode(CENTER);
-      push();
-      translate(
-        width / 2 + numberOrZero(config.xOff),
-        height / 2 + numberOrZero(config.yOff)
-      );
-      if (isFrontCamera) scale(-1, 1);
-      image(stamp, 0, 0, stamp.width * backgroundScale, stamp.height * backgroundScale);
-      pop();
-      imageMode(CORNER);
-    } else {
-      for (const face of faces.slice(0, 5)) {
-        if (!face.keypoints?.[1] || !face.keypoints?.[234] || !face.keypoints?.[454]) continue;
-        const anchor = face.keypoints[1];
-        const left = face.keypoints[234];
-        const right = face.keypoints[454];
-        const targetX = videoX + anchor.x * imageScale;
-        const targetY = videoY + anchor.y * imageScale;
-        const faceWidth = Math.abs(right.x - left.x) * imageScale;
-        const stampWidth = faceWidth * clamp(config.scale, .2, 6);
-        const stampHeight = stampWidth * (stamp.height / stamp.width);
+  if (!config || config.point === "none" || !stamp) return;
 
-        imageMode(CENTER);
-        push();
-        translate(
-          targetX + numberOrZero(config.xOff),
-          targetY + numberOrZero(config.yOff)
-        );
-        if (isFrontCamera) scale(-1, 1);
-        image(stamp, 0, 0, stampWidth, stampHeight);
-        pop();
-        imageMode(CORNER);
-      }
-    }
+  if (config.point === "bg") {
+    const backgroundScale = Math.max(width / stamp.width, height / stamp.height) * clamp(config.scale, .2, 6);
+    imageMode(CENTER);
+    image(
+      stamp,
+      width / 2 + numberOrZero(config.xOff),
+      height / 2 + numberOrZero(config.yOff),
+      stamp.width * backgroundScale,
+      stamp.height * backgroundScale
+    );
+    imageMode(CORNER);
+    return;
   }
-  pop();
+
+  for (const face of faces.slice(0, 5)) {
+    const placement = resolveFacePlacement(face, frame);
+    if (!placement) continue;
+    const stampWidth = placement.faceWidth * clamp(config.scale, .2, 6);
+    const stampHeight = stampWidth * (stamp.height / stamp.width);
+    imageMode(CENTER);
+    image(
+      stamp,
+      placement.x + numberOrZero(config.xOff),
+      placement.y + numberOrZero(config.yOff),
+      stampWidth,
+      stampHeight
+    );
+    imageMode(CORNER);
+  }
+}
+
+function resolveFacePlacement(face, frame) {
+  if (!face?.keypoints?.[1] || !face.keypoints[234] || !face.keypoints[454]) return null;
+  const anchor = face.keypoints[1];
+  const left = face.keypoints[234];
+  const right = face.keypoints[454];
+  const p5Width = video.width || 0;
+  const p5Height = video.height || 0;
+  const nativeWidth = video.elt.videoWidth || 0;
+  const nativeHeight = video.elt.videoHeight || 0;
+  const candidates = [
+    { width: p5Width, height: p5Height },
+    { width: nativeWidth, height: nativeHeight },
+    { width: nativeHeight, height: nativeWidth },
+    { width: 1, height: 1 }
+  ].filter((candidate, index, list) =>
+    candidate.width > 0 &&
+    candidate.height > 0 &&
+    list.findIndex((item) => item.width === candidate.width && item.height === candidate.height) === index
+  );
+
+  let best = null;
+  for (const candidate of candidates) {
+    const scaleX = frame.width / candidate.width;
+    const scaleY = frame.height / candidate.height;
+    const unmirroredX = frame.x + anchor.x * scaleX;
+    const x = isFrontCamera ? width - unmirroredX : unmirroredX;
+    const y = frame.y + anchor.y * scaleY;
+    const faceWidth = Math.abs(right.x - left.x) * scaleX;
+    const faceRatio = faceWidth / width;
+    const outsideX = x < -width * .1 || x > width * 1.1;
+    const outsideY = y < -height * .1 || y > height * 1.1;
+    const invalidSize = faceRatio < .06 || faceRatio > 1.15;
+    const distortion = Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY);
+    const centerDistance = Math.hypot((x - width / 2) / width, (y - height / 2) / height);
+    const score =
+      (outsideX ? 10 : 0) +
+      (outsideY ? 10 : 0) +
+      (invalidSize ? 8 : 0) +
+      distortion * 3 +
+      centerDistance * .25;
+    if (!best || score < best.score) best = { x, y, faceWidth, score };
+  }
+
+  if (!best || best.score >= 8) return null;
+  return best;
 }
 
 async function startCamera(facingMode) {

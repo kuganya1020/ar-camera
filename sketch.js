@@ -156,29 +156,31 @@ async function startCamera(facingMode) {
   }
 
   try {
-    cameraStream = await getCameraStream(facingMode);
-    const activeTrack = cameraStream.getVideoTracks()[0];
-    currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
-
-    video = createVideo([]);
+    const videoConstraints = await getCameraConstraints(facingMode);
+    const startSession = detectionSession;
+    video = createCapture({ video: videoConstraints, audio: false }, async (stream) => {
+      if (startSession !== detectionSession || !video) {
+        stream?.getTracks?.().forEach((track) => track.stop());
+        return;
+      }
+      cameraStream = video.elt.srcObject || stream;
+      const activeTrack = cameraStream?.getVideoTracks?.()[0];
+      currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
+      try { await video.elt.play(); } catch {}
+      video.size(video.elt.videoWidth || 720, video.elt.videoHeight || 1280);
+      cameraReady = true;
+      hideLoader();
+      setStatus("顔を認識中");
+      beginFaceDetection();
+    });
     video.hide();
     video.elt.muted = true;
     video.elt.autoplay = true;
     video.elt.playsInline = true;
     video.elt.setAttribute("playsinline", "");
-    video.elt.srcObject = cameraStream;
-    await video.elt.play();
-    video.size(video.elt.videoWidth || 720, video.elt.videoHeight || 1280);
-
-    cameraReady = true;
-    hideLoader();
-    setStatus(modelReady ? "準備完了" : "顔認識を準備中");
-    beginFaceDetection();
-    window.setTimeout(() => {
-      if (document.getElementById("status-pill")?.textContent === "準備完了") {
-        document.getElementById("status-pill").style.opacity = "0";
-      }
-    }, 1200);
+    video.elt.addEventListener("error", () => {
+      if (!cameraReady) showCameraError("カメラを開始できませんでした");
+    }, { once: true });
   } catch (error) {
     const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
     showCameraError(denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした");
@@ -192,6 +194,11 @@ function beginFaceDetection() {
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
         faces = Array.isArray(results) ? results.slice(0, 5) : [];
+        if (faces.length) {
+          const status = byId("status-pill");
+          status.textContent = "準備完了";
+          status.style.opacity = "0";
+        }
       }
     });
   } catch {
@@ -199,7 +206,7 @@ function beginFaceDetection() {
   }
 }
 
-async function getCameraStream(facingMode) {
+async function getCameraConstraints(facingMode) {
   const screenRatio = Math.min(windowWidth, windowHeight) / Math.max(windowWidth, windowHeight);
   const portrait = windowHeight >= windowWidth;
   const baseVideo = {
@@ -216,32 +223,14 @@ async function getCameraStream(facingMode) {
   const pattern = facingMode === "user" ? frontPattern : backPattern;
   let target = cameras.find((camera) => pattern.test(camera.label));
 
-  if (!target && cameras.length > 1) {
+  if (!target && currentDeviceId && cameras.length > 1) {
     target = cameras.find((camera) => camera.deviceId && camera.deviceId !== currentDeviceId);
   }
 
   if (target?.deviceId) {
-    try {
-      return await navigator.mediaDevices.getUserMedia({
-        video: { ...baseVideo, deviceId: { exact: target.deviceId } },
-        audio: false
-      });
-    } catch {
-      // デバイスID指定が拒否された場合はfacingModeへフォールバックする。
-    }
+    return { ...baseVideo, deviceId: { exact: target.deviceId } };
   }
-
-  try {
-    return await navigator.mediaDevices.getUserMedia({
-      video: { ...baseVideo, facingMode: { exact: facingMode } },
-      audio: false
-    });
-  } catch {
-    return navigator.mediaDevices.getUserMedia({
-      video: { ...baseVideo, facingMode: { ideal: facingMode } },
-      audio: false
-    });
-  }
+  return { ...baseVideo, facingMode: { ideal: facingMode } };
 }
 
 function stopFaceDetection() {
@@ -373,6 +362,13 @@ function selectEffect(index) {
   draftConfig = null;
   draftImage = null;
   createIconList();
+  const selected = assetList[currentIndex];
+  if (selected?.point === "face" && !faces.length) {
+    setStatus("顔を認識中");
+  } else {
+    setStatus(selected?.name || "エフェクトなし");
+    window.setTimeout(() => { byId("status-pill").style.opacity = "0"; }, 900);
+  }
 }
 
 function openAddSheet() {

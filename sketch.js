@@ -80,8 +80,8 @@ function draw() {
   background(12);
   if (!cameraReady || !video || video.elt.readyState < 2) return;
 
-  const sourceWidth = video.elt.videoWidth || 720;
-  const sourceHeight = video.elt.videoHeight || 1280;
+  const sourceWidth = video.width || video.elt.videoWidth || width;
+  const sourceHeight = video.height || video.elt.videoHeight || height;
   const previewScale = Math.max(width / sourceWidth, height / sourceHeight);
   const drawWidth = sourceWidth * previewScale;
   const drawHeight = sourceHeight * previewScale;
@@ -167,7 +167,6 @@ async function startCamera(facingMode) {
       const activeTrack = cameraStream?.getVideoTracks?.()[0];
       currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
       try { await video.elt.play(); } catch {}
-      video.size(video.elt.videoWidth || 720, video.elt.videoHeight || 1280);
       cameraReady = true;
       hideLoader();
       setStatus("顔を認識中");
@@ -207,14 +206,7 @@ function beginFaceDetection() {
 }
 
 async function getCameraConstraints(facingMode) {
-  const screenRatio = Math.min(windowWidth, windowHeight) / Math.max(windowWidth, windowHeight);
-  const portrait = windowHeight >= windowWidth;
-  const baseVideo = {
-    width: { ideal: portrait ? 720 : 1280, max: 1280 },
-    height: { ideal: portrait ? 1280 : 720, max: 1280 },
-    aspectRatio: { ideal: portrait ? screenRatio : 1 / screenRatio },
-    frameRate: { ideal: 24, max: 30 }
-  };
+  const baseVideo = {};
 
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
   const cameras = devices.filter((device) => device.kind === "videoinput");

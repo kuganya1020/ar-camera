@@ -1,376 +1,815 @@
-var faceMesh; var video; var faces = []; var images = []; var currentIndex = 0; var isFrontCamera = true; 
+"use strict";
 
-// ✨ ジェスチャー用の変数 ✨
-let initialPinchDist = 0;
-let baseStampScale = 1; // カメラではなく「スタンプの基準サイズ」を記憶
-let isDragging = false; 
-let lastTouchX = 0;
-let lastTouchY = 0;
-let startTime; // 録画開始時間を記録
-let timerInterval; // タイマーを動かすための仕掛け
-
-var defaultAssets = [
-  { fileName: "mimi.png", scale: 2.4, xOff: 0, yOff: -60, point: 1 },
-  { fileName: "hat.png", scale: 2.5, xOff: 0, yOff: -100, point: 1 },
-  { fileName: "sunset.png", scale: 1.0, xOff: 0, yOff: 0, point: 'bg' },
-  { fileName: "star.png", scale: 1.0, xOff: 0, yOff: 0, point: 'bg' }
+const DEFAULT_ASSETS = [
+  { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
+  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
+  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: -100 },
+  { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
+  { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
 ];
 
-var assetList = [...defaultAssets];
+const STORAGE_KEY = "arCameraAssetsV7";
+const LEGACY_KEY = "myARCameraData_V6";
+const DB_NAME = "ar-camera-images";
+const DB_STORE = "images";
+const MAX_UPLOAD_EDGE = 1280;
+const MAX_UPLOAD_PIXELS = 1600000;
 
-let savedAssets = localStorage.getItem('myARCameraData_V6');
-if (savedAssets) { 
-  try { 
-    let parsed = JSON.parse(savedAssets);
-    if (parsed && parsed.length > 0) assetList = parsed;
-  } catch(e) { console.log("データ読み込み失敗"); } 
-}
-
-var previewImg = null; var previewConfig = { scale: 2.4, xOff: 0, yOff: -60, point: 1, fileData: null };
-var isEditMode = false; var editingIndex = -1; var originalConfig = null; 
-var currentMode = 'photo'; var mediaRecorder; var recordedChunks = []; var isRecording = false;
+let faceMesh;
+let video;
+let cameraStream;
+let faces = [];
+let assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset }));
+let images = new Map();
+let currentIndex = 0;
+let currentMode = "photo";
+let isFrontCamera = true;
+let isRecording = false;
+let mediaRecorder;
+let recordedChunks = [];
+let recordingStream;
+let timerInterval;
+let recordingStartedAt = 0;
+let detectionSession = 0;
+let modelReady = false;
+let cameraReady = false;
+let editingIndex = -1;
+let draftConfig = null;
+let draftImage = null;
+let draftObjectUrl = "";
+let toastTimer;
+let longPressTimer;
+let dbPromise;
+const activePointers = new Map();
+let dragOrigin = null;
+let pinchOrigin = null;
 
 function preload() {
-  for (let i = 0; i < assetList.length; i++) {
-    let imgSrc = assetList[i].fileData ? assetList[i].fileData : assetList[i].fileName;
-    images[i] = loadImage(imgSrc);
+  faceMesh = ml5.faceMesh({ maxFaces: 1, flipHorizontal: false });
+  modelReady = true;
+  for (const asset of DEFAULT_ASSETS) {
+    if (asset.fileName) {
+      images.set(asset.id, loadImage(asset.fileName, undefined, () => {
+        images.delete(asset.id);
+      }));
+    }
   }
-  faceMesh = ml5.faceMesh({ maxFaces: 5, flipHorizontal: false });
 }
 
 function setup() {
-  let cnv = createCanvas(windowWidth, windowHeight);
-  cnv.parent('camera-container'); startCamera("user");
-  createIconList(); setupPreviewEvents();
+  const density = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4
+    ? 1
+    : Math.min(window.devicePixelRatio || 1, 1.5);
+  pixelDensity(density);
+  frameRate(navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4 ? 24 : 30);
 
-  document.getElementById('mode-photo').onclick = () => switchMode('photo');
-  document.getElementById('mode-video').onclick = () => switchMode('video');
+  const canvas = createCanvas(windowWidth, windowHeight);
+  canvas.parent("camera-container");
+  canvas.elt.setAttribute("aria-label", "カメラプレビュー");
 
-  document.getElementById('main-shutter-btn').onclick = () => {
-    if (currentMode === 'photo') { takePhoto(); } else { toggleRecording(); }
-  };
+  bindUI();
+  bindCanvasGestures(canvas.elt);
+  loadStoredAssets().finally(() => {
+    createIconList();
+    startCamera("user");
+  });
+}
 
-  document.getElementById('open-settings-btn').onclick = () => {
-    document.body.classList.add('split-mode'); openPanelInAddMode();
-  };
-  document.getElementById('close-panel-btn').onclick = () => {
-    document.body.classList.remove('split-mode');
-  };
+function draw() {
+  background(12);
+  if (!cameraReady || !video || video.elt.readyState < 2) return;
 
-  let switchBtn = document.getElementById('switch-camera-btn');
-  if (switchBtn) {
-    switchBtn.onclick = () => { isFrontCamera = !isFrontCamera; startCamera(isFrontCamera ? "user" : "environment"); };
+  const sourceWidth = video.elt.videoWidth || 720;
+  const sourceHeight = video.elt.videoHeight || 1280;
+  const cover = Math.max(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * cover;
+  const drawHeight = sourceHeight * cover;
+  const drawX = (width - drawWidth) / 2;
+  const drawY = (height - drawHeight) / 2;
+
+  push();
+  if (isFrontCamera) {
+    translate(width, 0);
+    scale(-1, 1);
+    image(video, drawX, drawY, drawWidth, drawHeight);
+  } else {
+    image(video, drawX, drawY, drawWidth, drawHeight);
+  }
+  pop();
+
+  const config = draftConfig || assetList[currentIndex];
+  const stamp = draftImage || getAssetImage(config);
+  if (!config || config.point === "none" || !stamp) return;
+
+  if (config.point === "bg") {
+    drawBackgroundStamp(stamp, config);
+  } else if (faces.length) {
+    drawFaceStamp(stamp, config, faces[0], cover, drawX, drawY);
+  }
+}
+
+function drawBackgroundStamp(stamp, config) {
+  const scaleToCover = Math.max(width / stamp.width, height / stamp.height) * clamp(config.scale, .2, 6);
+  imageMode(CENTER);
+  image(
+    stamp,
+    width / 2 + numberOrZero(config.xOff),
+    height / 2 + numberOrZero(config.yOff),
+    stamp.width * scaleToCover,
+    stamp.height * scaleToCover
+  );
+  imageMode(CORNER);
+}
+
+function drawFaceStamp(stamp, config, face, cover, drawX, drawY) {
+  if (!face.keypoints || !face.keypoints[1] || !face.keypoints[234] || !face.keypoints[454]) return;
+  const anchor = face.keypoints[1];
+  const left = face.keypoints[234];
+  const right = face.keypoints[454];
+  let x = drawX + anchor.x * cover;
+  if (isFrontCamera) x = width - x;
+  const y = drawY + anchor.y * cover;
+  const faceWidth = Math.abs(right.x - left.x) * cover;
+  const stampWidth = faceWidth * clamp(config.scale, .2, 6);
+  const stampHeight = stampWidth * (stamp.height / stamp.width);
+
+  imageMode(CENTER);
+  image(stamp, x + numberOrZero(config.xOff), y + numberOrZero(config.yOff), stampWidth, stampHeight);
+  imageMode(CORNER);
+}
+
+async function startCamera(facingMode) {
+  if (isRecording) return;
+  cameraReady = false;
+  faces = [];
+  setStatus("カメラを準備中");
+  showLoader("カメラを準備中");
+  stopFaceDetection();
+  stopCameraTracks();
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showCameraError("このブラウザはカメラ撮影に対応していません");
+    return;
   }
 
-  setTimeout(() => {
-    let loader = document.getElementById('loading-screen');
-    if(loader) {
-      loader.style.opacity = '0';
-      setTimeout(() => loader.style.display = 'none', 500);
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: facingMode },
+        width: { ideal: 720, max: 1280 },
+        height: { ideal: 1280, max: 1280 },
+        frameRate: { ideal: 24, max: 30 }
+      },
+      audio: false
+    });
+
+    video = createVideo([]);
+    video.hide();
+    video.elt.muted = true;
+    video.elt.autoplay = true;
+    video.elt.playsInline = true;
+    video.elt.setAttribute("playsinline", "");
+    video.elt.srcObject = cameraStream;
+    await video.elt.play();
+
+    cameraReady = true;
+    hideLoader();
+    setStatus(modelReady ? "準備完了" : "顔認識を準備中");
+    beginFaceDetection();
+    window.setTimeout(() => {
+      if (document.getElementById("status-pill")?.textContent === "準備完了") {
+        document.getElementById("status-pill").style.opacity = "0";
+      }
+    }, 1200);
+  } catch (error) {
+    const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+    showCameraError(denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした");
+  }
+}
+
+function beginFaceDetection() {
+  if (!faceMesh || !video || !cameraReady) return;
+  const session = ++detectionSession;
+  try {
+    faceMesh.detectStart(video, (results) => {
+      if (session === detectionSession && cameraReady && !document.hidden) {
+        faces = Array.isArray(results) ? results.slice(0, 1) : [];
+      }
+    });
+  } catch {
+    setStatus("顔認識を開始できませんでした");
+  }
+}
+
+function stopFaceDetection() {
+  detectionSession += 1;
+  faces = [];
+  try {
+    if (faceMesh?.detectStop) faceMesh.detectStop();
+  } catch {
+    // 古いml5実装では停止済みの呼び出しが例外になる場合がある。
+  }
+}
+
+function stopCameraTracks() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop());
+    cameraStream = null;
+  }
+  if (video) {
+    video.elt.srcObject = null;
+    video.remove();
+    video = null;
+  }
+}
+
+function bindUI() {
+  byId("mode-photo").addEventListener("click", () => switchMode("photo"));
+  byId("mode-video").addEventListener("click", () => switchMode("video"));
+  byId("main-shutter-btn").addEventListener("click", () => {
+    if (!cameraReady) return showToast("カメラを準備しています");
+    currentMode === "photo" ? takePhoto() : toggleRecording();
+  });
+  byId("switch-camera-btn").addEventListener("click", async () => {
+    if (isRecording) return showToast("録画を停止してから切り替えてください");
+    isFrontCamera = !isFrontCamera;
+    await startCamera(isFrontCamera ? "user" : "environment");
+  });
+  byId("open-settings-btn").addEventListener("click", openAddSheet);
+  byId("close-panel-btn").addEventListener("click", cancelSheet);
+  byId("cancel-edit-btn").addEventListener("click", cancelSheet);
+  byId("sheet-backdrop").addEventListener("click", cancelSheet);
+  byId("file-input").addEventListener("change", handleImageUpload);
+  byId("save-effect-btn").addEventListener("click", saveEffect);
+  byId("delete-btn").addEventListener("click", () => setModal("delete-dialog", true));
+  byId("delete-cancel-btn").addEventListener("click", () => setModal("delete-dialog", false));
+  byId("delete-confirm-btn").addEventListener("click", deleteEffect);
+  byId("help-btn").addEventListener("click", () => setModal("tutorial-overlay", true));
+  byId("tutorial-close-btn").addEventListener("click", () => {
+    setModal("tutorial-overlay", false);
+    safeStorageSet("arCameraTutorialSeen", "1");
+  });
+  byId("close-app-btn").addEventListener("click", () => {
+    if (history.length > 1) history.back();
+    else showToast("ブラウザの戻る操作で閉じられます");
+  });
+
+  document.querySelectorAll(".part-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (!draftConfig) return;
+      draftConfig.point = button.dataset.point;
+      syncPlacementButtons();
+    });
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      if (isRecording) {
+        stopRecording();
+        showToast("画面が閉じられたため録画を停止しました");
+      }
+      faces = [];
     }
-  }, 3000); 
+  });
+  window.addEventListener("orientationchange", () => {
+    if (isRecording) {
+      stopRecording();
+      showToast("画面が回転したため録画を停止しました");
+    }
+  });
+  window.addEventListener("pagehide", cleanup);
+  window.addEventListener("beforeunload", cleanup);
+
+  if (!safeStorageGet("arCameraTutorialSeen")) {
+    window.setTimeout(() => setModal("tutorial-overlay", true), 400);
+  }
 }
 
 function switchMode(mode) {
   if (isRecording) return;
   currentMode = mode;
-  document.getElementById('mode-photo').classList.toggle('active', mode === 'photo');
-  document.getElementById('mode-video').classList.toggle('active', mode === 'video');
-  document.body.classList.toggle('mode-video-active', mode === 'video');
-}
-
-function startCamera(facingMode) {
-  if (video) {
-    if (video.elt && video.elt.srcObject) video.elt.srcObject.getTracks().forEach(t => t.stop());
-    video.remove();
-  }
-  video = createCapture({ video: { facingMode: facingMode }, audio: false }, function() {
-    faceMesh.detectStart(video, function(results) { faces = results; });
-  });
-  video.hide();
-}
-
-function draw() {
-  background(20);
-  if (!video || !video.elt || video.width === 0 || video.height === 0) return;
-  
-  let imgScale = max(width / video.width, height / video.height);
-  let vW = video.width * imgScale; let vH = video.height * imgScale;
-  let vX = (width - vW) / 2; let vY = (height - vH) / 2;
-  
-  push(); if (isFrontCamera) { translate(width, 0); scale(-1, 1); }
-  image(video, vX, vY, vW, vH);
-  
-  let targetImg = previewImg ? previewImg : images[currentIndex];
-  let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
-  
-  if (targetImg) {
-    if (targetConfig.point === 'bg') {
-      imageMode(CENTER); 
-      let bgScale = (height / targetImg.height) * targetConfig.scale; 
-      push(); 
-      translate(width/2 + (targetConfig.xOff || 0), height/2 + (targetConfig.yOff || 0)); 
-      if (isFrontCamera) scale(-1, 1); 
-      image(targetImg, 0, 0, targetImg.width * bgScale, targetImg.height * bgScale); 
-      pop();
-    } else if (faces && faces.length > 0) {
-      for (let face of faces) {
-        let pt = parseInt(targetConfig.point); 
-        if(face.keypoints[pt]) {
-          let tx = vX + face.keypoints[pt].x * imgScale; let ty = vY + face.keypoints[pt].y * imgScale;
-          let fw = abs(vX + face.keypoints[454].x * imgScale - (vX + face.keypoints[234].x * imgScale));
-          imageMode(CENTER); push(); translate(tx + (targetConfig.xOff || 0), ty + (targetConfig.yOff || 0));
-          if (isFrontCamera) scale(-1, 1); image(targetImg, 0, 0, fw * targetConfig.scale, fw * targetConfig.scale * (targetImg.height / targetImg.width)); pop();
-        }
-      }
-    }
-  }
-  pop(); 
+  const photo = mode === "photo";
+  document.body.classList.toggle("video-mode", !photo);
+  byId("mode-photo").classList.toggle("active", photo);
+  byId("mode-video").classList.toggle("active", !photo);
+  byId("mode-photo").setAttribute("aria-selected", String(photo));
+  byId("mode-video").setAttribute("aria-selected", String(!photo));
+  byId("main-shutter-btn").setAttribute("aria-label", photo ? "写真を撮る" : "録画を開始する");
 }
 
 function createIconList() {
-  let iconContainer = select('#icon-list'); if (!iconContainer) return; iconContainer.html(''); 
-  for (let i = 0; i < assetList.length; i++) {
-    let icon = createDiv(''); icon.parent(iconContainer); icon.addClass('filter-icon');
-    icon.style('background-image', `url(${assetList[i].fileData || assetList[i].fileName})`);
-    let editBadge = createDiv('⚙️'); editBadge.addClass('edit-badge'); editBadge.parent(icon);
-    editBadge.mousePressed((e) => { e.stopPropagation(); document.body.classList.add('split-mode'); openPanelInEditMode(i); });
-    icon.mousePressed(() => { currentIndex = i; previewImg = null; selectAll('.filter-icon').forEach(el => el.removeClass('active')); icon.addClass('active'); });
-    if (i === currentIndex) icon.addClass('active');
-  }
-}
+  const list = byId("icon-list");
+  list.replaceChildren();
+  assetList.forEach((asset, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `filter-icon${index === currentIndex ? " active" : ""}`;
+    button.setAttribute("role", "listitem");
+    button.setAttribute("aria-label", `${asset.name || "エフェクト"}を選ぶ`);
+    button.dataset.empty = String(asset.point === "none");
+    const imageUrl = getAssetPreviewUrl(asset);
+    if (imageUrl) button.style.backgroundImage = `url("${imageUrl}")`;
 
-// ✨ スライダーリセット処理を削除してスッキリ！ ✨
-function openPanelInAddMode() {
-  isEditMode = false; document.getElementById('panel-title').innerText = '新しいイラストを登録';
-  document.getElementById('upload-section').style.display = 'block'; 
-  document.getElementById('add-btn').style.display = 'block';
-  document.getElementById('edit-btns').style.display = 'none'; 
-  document.getElementById('file-input').value = "";
-  previewImg = null; previewConfig = { scale: 2.4, xOff: 0, yOff: -60, point: 1, fileData: null };
-}
-
-function openPanelInEditMode(index) {
-  isEditMode = true; editingIndex = index; currentIndex = index; 
-  document.getElementById('panel-title').innerText = 'イラストを編集'; 
-  document.getElementById('upload-section').style.display = 'none'; 
-  document.getElementById('add-btn').style.display = 'none';
-  document.getElementById('edit-btns').style.display = 'flex'; 
-  let d = assetList[index]; 
-  previewImg = images[index]; previewConfig = { ...d }; originalConfig = { ...d }; 
-}
-
-function setupPreviewEvents() {
-  document.getElementById('file-input').onchange = (e) => {
-    let file = e.target.files[0];
-    if (!file) return;
-
-    let reader = new FileReader();
-    reader.onload = (ev) => {
-      let tempImg = new Image();
-      tempImg.onload = () => {
-        // 🎨 キャンバスを使って画像を「スタンプサイズ」にリサイズする
-        let canvas = document.createElement('canvas');
-        let MAX_WIDTH = 400; // スタンプなら400pxあれば十分綺麗！
-        let scale = MAX_WIDTH / tempImg.width;
-        
-        canvas.width = MAX_WIDTH;
-        canvas.height = tempImg.height * scale;
-
-        let ctx = canvas.getContext('2d');
-        ctx.drawImage(tempImg, 0, 0, canvas.width, canvas.height);
-
-        // ギュギュッと圧縮したデータ（画質0.7くらいが理想）を作成
-        let compressedData = canvas.toDataURL('image/jpeg', 0.7);
-        
-        previewImg = loadImage(compressedData);
-        previewConfig.fileData = compressedData;
-        console.log("画像を軽量化して読み込みました！");
-      };
-      tempImg.src = ev.target.result;
+    button.addEventListener("click", () => selectEffect(index));
+    const beginLongPress = () => {
+      if (index === 0 || asset.builtIn) return;
+      longPressTimer = window.setTimeout(() => openEditSheet(index), 550);
     };
-    reader.readAsDataURL(file);
-  };
-
-  // --- ボタン操作系 ---
-  document.querySelectorAll('.part-btn').forEach(btn => {
-    btn.onclick = (e) => {
-      document.querySelectorAll('.part-btn').forEach(b => b.classList.remove('active'));
-      e.target.classList.add('active');
-      previewConfig.point = e.target.getAttribute('data-point');
-    };
+    const cancelLongPress = () => window.clearTimeout(longPressTimer);
+    button.addEventListener("pointerdown", beginLongPress);
+    button.addEventListener("pointerup", cancelLongPress);
+    button.addEventListener("pointercancel", cancelLongPress);
+    button.addEventListener("pointermove", cancelLongPress);
+    list.appendChild(button);
   });
-  
-  document.getElementById('add-btn').onclick = () => { 
-    if(!previewImg) return alert("画像を選んでね！");
-    assetList.push({...previewConfig});
-    images.push(previewImg);
-    saveAndClose(); 
-  };
-
-  document.getElementById('update-btn').onclick = () => { 
-    assetList[editingIndex] = {...previewConfig};
-    images[editingIndex] = previewImg;
-    saveAndClose(); 
-  };
-
-  document.getElementById('delete-btn').onclick = () => { 
-    if(confirm("このスタンプを消しちゃう？")){
-      assetList.splice(editingIndex, 1);
-      images.splice(editingIndex, 1);
-      currentIndex = 0;
-      saveAndClose();
-    } 
-  };
-}
-function saveAndClose() { 
-  localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList)); 
-  document.body.classList.remove('split-mode'); 
-  previewImg = null; 
-  createIconList(); 
 }
 
-function toggleRecording() { if (isRecording) { stopRecording(); } else { startRecording(); } }
-
-function startRecording() {
-  let canvasElement = document.querySelector('canvas');
-  let stream = canvasElement.captureStream(30);
-  let options = { mimeType: 'video/mp4' };
-  if (!MediaRecorder.isTypeSupported('video/mp4')) options = { mimeType: 'video/webm' };
-  mediaRecorder = new MediaRecorder(stream, options);
-  recordedChunks = [];
-  mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-  mediaRecorder.onstop = saveVideo;
-  startTime = Date.now();
-  document.body.classList.add('recording-active');
-  timerInterval = setInterval(updateTimer, 100); // 0.1秒ごとに更新
-  mediaRecorder.start();
-  isRecording = true;
-  document.getElementById('main-shutter-btn').classList.add('recording');
+function selectEffect(index) {
+  if (index < 0 || index >= assetList.length) index = 0;
+  currentIndex = index;
+  draftConfig = null;
+  draftImage = null;
+  createIconList();
 }
 
-function stopRecording() {
-  if(mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
-  isRecording = false;
-  document.getElementById('main-shutter-btn').classList.remove('recording');
-// ⏱ タイマー停止！
-  clearInterval(timerInterval);
-  document.body.classList.remove('recording-active');
-  document.getElementById('video-timer').innerText = "00:00";
-}
-// ⏱ 秒数を「00:00」の形式に直して画面に出す関数（一番下に追加してね）
-function updateTimer() {
-  let elapsed = Date.now() - startTime;
-  let sec = floor(elapsed / 1000);
-  let min = floor(sec / 60);
-  let displaySec = nf(sec % 60, 2);
-  let displayMin = nf(min, 2);
-  document.getElementById('video-timer').innerText = `${displayMin}:${displaySec}`;
+function openAddSheet() {
+  editingIndex = -1;
+  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.2, xOff: 0, yOff: -40, custom: true };
+  draftImage = null;
+  byId("panel-title").textContent = "エフェクトを追加";
+  byId("upload-section").hidden = false;
+  byId("delete-btn").hidden = true;
+  byId("save-effect-btn").textContent = "追加";
+  byId("file-input").value = "";
+  syncPlacementButtons();
+  setSheet(true);
 }
 
-async function saveVideo() {
-  let blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
-  let ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
-  let file = new File([blob], `ar-video.${ext}`, { type: mediaRecorder.mimeType });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: 'AR動画' }); } catch (error) {}
-  } else {
-    let url = URL.createObjectURL(blob); let a = document.createElement('a'); a.href = url; a.download = `ar-video.${ext}`; a.click();
+function openEditSheet(index) {
+  if (index <= 0 || index >= assetList.length) return;
+  editingIndex = index;
+  currentIndex = index;
+  draftConfig = { ...assetList[index] };
+  draftImage = getAssetImage(assetList[index]);
+  byId("panel-title").textContent = "エフェクトを編集";
+  byId("upload-section").hidden = true;
+  byId("delete-btn").hidden = Boolean(assetList[index].builtIn);
+  byId("save-effect-btn").textContent = "保存";
+  syncPlacementButtons();
+  setSheet(true);
+}
+
+function cancelSheet() {
+  draftConfig = null;
+  draftImage = null;
+  editingIndex = -1;
+  revokeDraftUrl();
+  setSheet(false);
+}
+
+function setSheet(open) {
+  byId("settings-panel").hidden = !open;
+  byId("sheet-backdrop").hidden = !open;
+  document.body.classList.toggle("sheet-open", open);
+}
+
+function syncPlacementButtons() {
+  document.querySelectorAll(".part-btn").forEach((button) => {
+    button.classList.toggle("active", button.dataset.point === draftConfig?.point);
+  });
+}
+
+async function handleImageUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file || !draftConfig) return;
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+    showToast("PNG、JPEG、WebP画像を選んでください");
+    return;
   }
+  try {
+    const optimized = await optimizeImage(file);
+    await idbPut(draftConfig.id, optimized.blob);
+    draftConfig.mimeType = optimized.blob.type;
+    draftImage = await loadP5Image(optimized.url);
+    revokeDraftUrl();
+    draftObjectUrl = optimized.url;
+    showToast("画像を読み込みました");
+  } catch {
+    showToast("画像を読み込めませんでした");
+  }
+}
+
+async function optimizeImage(file) {
+  const bitmap = "createImageBitmap" in window
+    ? await createImageBitmap(file)
+    : await loadHtmlImage(URL.createObjectURL(file));
+  const sourceWidth = bitmap.width;
+  const sourceHeight = bitmap.height;
+  const edgeScale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(sourceWidth, sourceHeight));
+  const pixelScale = Math.min(1, Math.sqrt(MAX_UPLOAD_PIXELS / (sourceWidth * sourceHeight)));
+  const scale = Math.min(edgeScale, pixelScale);
+  const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  canvas.getContext("2d", { alpha: true }).drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+  if (bitmap.close) bitmap.close();
+  const type = file.type === "image/png" ? "image/png" : "image/webp";
+  let blob = await canvasToBlob(canvas, type, .84);
+  if (!blob || (type === "image/webp" && blob.type !== "image/webp")) {
+    blob = await canvasToBlob(canvas, "image/jpeg", .86);
+  }
+  return { blob, url: URL.createObjectURL(blob) };
+}
+
+async function saveEffect() {
+  if (!draftConfig) return;
+  if (editingIndex < 0 && !draftImage) {
+    showToast("画像を選んでください");
+    return;
+  }
+  draftConfig.scale = clamp(draftConfig.scale, .2, 6);
+  if (editingIndex >= 0) {
+    assetList[editingIndex] = { ...draftConfig };
+  } else {
+    assetList.push({ ...draftConfig });
+    currentIndex = assetList.length - 1;
+    images.set(draftConfig.id, draftImage);
+  }
+  persistMetadata();
+  draftConfig = null;
+  draftImage = null;
+  editingIndex = -1;
+  setSheet(false);
+  createIconList();
+  showToast("保存しました");
+}
+
+async function deleteEffect() {
+  if (editingIndex <= 0 || editingIndex >= assetList.length || assetList[editingIndex].builtIn) return;
+  const removed = assetList[editingIndex];
+  assetList.splice(editingIndex, 1);
+  images.delete(removed.id);
+  if (removed.custom) await idbDelete(removed.id);
+  currentIndex = clamp(currentIndex, 0, Math.max(0, assetList.length - 1));
+  if (currentIndex >= editingIndex) currentIndex = Math.max(0, currentIndex - 1);
+  persistMetadata();
+  setModal("delete-dialog", false);
+  cancelSheet();
+  createIconList();
+  showToast("削除しました");
 }
 
 async function takePhoto() {
-  let flash = document.getElementById('flash-overlay');
-  if (flash) {
-    flash.classList.remove('fade');
-    flash.classList.add('active');
-    setTimeout(() => {
-      flash.classList.remove('active');
-      flash.classList.add('fade');
-    }, 50);
-  }
+  const canvas = document.querySelector("canvas");
+  if (!canvas) return;
+  byId("flash-overlay").classList.remove("flash");
+  void byId("flash-overlay").offsetWidth;
+  byId("flash-overlay").classList.add("flash");
+  const blob = await canvasToBlob(canvas, "image/jpeg", .92);
+  if (!blob) return showToast("写真を保存できませんでした");
+  await shareOrDownload(blob, `ar-photo-${Date.now()}.jpg`, "image/jpeg", "AR写真");
+}
 
-  let canvasElement = document.querySelector('canvas');
-  canvasElement.toBlob(async (blob) => {
-    let file = new File([blob], 'ar-photo.png', { type: 'image/png' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { 
-        await navigator.share({ files: [file], title: 'AR写真' }); 
-      } catch (error) {
-        console.log("シェアがキャンセルされました");
-      }
-    } else {
-      saveCanvas('ar-photo-' + Date.now(), 'png');
+function toggleRecording() {
+  isRecording ? stopRecording() : startRecording();
+}
+
+function startRecording() {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+    showToast("このブラウザは動画録画に対応していません");
+    return;
+  }
+  const canvas = document.querySelector("canvas");
+  const mimeType = chooseRecordingMimeType();
+  try {
+    recordingStream = canvas.captureStream(24);
+    mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType, videoBitsPerSecond: 3500000 } : undefined);
+  } catch {
+    showToast("動画録画を開始できませんでした");
+    return;
+  }
+  recordedChunks = [];
+  mediaRecorder.addEventListener("dataavailable", (event) => {
+    if (event.data.size) recordedChunks.push(event.data);
+  });
+  mediaRecorder.addEventListener("stop", saveVideo, { once: true });
+  mediaRecorder.addEventListener("error", () => showToast("録画中にエラーが発生しました"), { once: true });
+  mediaRecorder.start(1000);
+  isRecording = true;
+  recordingStartedAt = Date.now();
+  document.body.classList.add("recording");
+  byId("main-shutter-btn").setAttribute("aria-label", "録画を停止する");
+  updateTimer();
+  timerInterval = window.setInterval(updateTimer, 250);
+}
+
+function stopRecording() {
+  if (!isRecording) return;
+  isRecording = false;
+  window.clearInterval(timerInterval);
+  timerInterval = null;
+  document.body.classList.remove("recording");
+  byId("video-timer").textContent = "00:00";
+  byId("main-shutter-btn").setAttribute("aria-label", "録画を開始する");
+  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+}
+
+function updateTimer() {
+  const seconds = Math.floor((Date.now() - recordingStartedAt) / 1000);
+  byId("video-timer").textContent =
+    `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+async function saveVideo() {
+  const type = mediaRecorder?.mimeType || recordedChunks[0]?.type || "video/webm";
+  const blob = new Blob(recordedChunks, { type });
+  const extension = type.includes("mp4") ? "mp4" : "webm";
+  stopRecordingTracks();
+  if (!blob.size) return showToast("動画を保存できませんでした");
+  await shareOrDownload(blob, `ar-video-${Date.now()}.${extension}`, type, "AR動画");
+  recordedChunks = [];
+}
+
+function chooseRecordingMimeType() {
+  const candidates = [
+    "video/mp4;codecs=h264",
+    "video/mp4",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8",
+    "video/webm"
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+async function shareOrDownload(blob, fileName, type, title) {
+  const file = new File([blob], fileName, { type });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title });
+      showToast("共有しました");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
     }
-  }, 'image/png');
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast("端末に保存しました");
 }
 
-function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+function bindCanvasGestures(canvas) {
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!document.body.classList.contains("sheet-open") || !draftConfig) return;
+    canvas.setPointerCapture(event.pointerId);
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointers.size === 1) {
+      dragOrigin = { x: event.clientX, y: event.clientY };
+    } else if (activePointers.size === 2) {
+      const [a, b] = [...activePointers.values()];
+      pinchOrigin = { distance: pointDistance(a, b), scale: draftConfig.scale };
+    }
+    event.preventDefault();
+  }, { passive: false });
 
-// ✨ スライダー不要！指だけでスタンプを完璧に操るジェスチャー ✨
-// ✨ スライダー不要！指だけでスタンプを完璧に操るジェスチャー ✨
-function touchStarted(event) {
-  // 🚨 追加ポイント：設定パネルが閉じている（通常撮影モード）時はロックして動かさない！
-  if (!document.body.classList.contains('split-mode')) return;
+  canvas.addEventListener("pointermove", (event) => {
+    if (!activePointers.has(event.pointerId) || !draftConfig) return;
+    const previous = activePointers.get(event.pointerId);
+    activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (activePointers.size >= 2 && pinchOrigin) {
+      const [a, b] = [...activePointers.values()];
+      draftConfig.scale = clamp(pinchOrigin.scale * pointDistance(a, b) / Math.max(1, pinchOrigin.distance), .2, 6);
+    } else if (previous) {
+      draftConfig.xOff += event.clientX - previous.x;
+      draftConfig.yOff += event.clientY - previous.y;
+    }
+    event.preventDefault();
+  }, { passive: false });
 
-  // UI（ボタンやアイコン）を触った時は無視！
-  if (event && event.target && event.target.tagName !== 'CANVAS') {
-    isDragging = false; return;
+  const endPointer = (event) => {
+    activePointers.delete(event.pointerId);
+    if (activePointers.size < 2) pinchOrigin = null;
+    if (!activePointers.size) dragOrigin = null;
+  };
+  canvas.addEventListener("pointerup", endPointer);
+  canvas.addEventListener("pointercancel", endPointer);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+}
+
+function cleanup() {
+  if (isRecording) stopRecording();
+  window.clearInterval(timerInterval);
+  window.clearTimeout(toastTimer);
+  window.clearTimeout(longPressTimer);
+  stopRecordingTracks();
+  stopFaceDetection();
+  stopCameraTracks();
+  revokeDraftUrl();
+}
+
+function stopRecordingTracks() {
+  if (recordingStream) recordingStream.getTracks().forEach((track) => track.stop());
+  recordingStream = null;
+}
+
+async function loadStoredAssets() {
+  const stored = safeJsonParse(safeStorageGet(STORAGE_KEY));
+  if (Array.isArray(stored)) {
+    assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }))
+      .concat(stored.filter((asset) => asset?.custom && asset.id));
+  } else {
+    assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }));
+    await migrateLegacyAssets();
   }
-  
-  let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
-
-  if (touches.length === 2) {
-    // ✌️ 2本指なら「スタンプの拡大縮小」の準備
-    initialPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
-    baseStampScale = targetConfig ? (targetConfig.scale || 1) : 1;
-    isDragging = false; 
-  } else if (touches.length === 1 || mouseIsPressed) {
-    // 👆 1本指なら「スタンプの移動」の準備
-    isDragging = true;
-    lastTouchX = touches.length > 0 ? touches[0].x : mouseX;
-    lastTouchY = touches.length > 0 ? touches[0].y : mouseY;
+  for (const asset of assetList.filter((item) => item.custom)) {
+    const blob = await idbGet(asset.id);
+    if (!blob) continue;
+    const url = URL.createObjectURL(blob);
+    try {
+      images.set(asset.id, await loadP5Image(url));
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 }
 
-function touchMoved(event) {
-  // 🚨 追加ポイント：設定パネルが閉じている時は無視！
-  if (!document.body.classList.contains('split-mode')) return;
+async function migrateLegacyAssets() {
+  const legacy = safeJsonParse(safeStorageGet(LEGACY_KEY));
+  if (!Array.isArray(legacy)) return;
+  for (const item of legacy) {
+    if (!item?.fileData) continue;
+    try {
+      const id = createId();
+      const blob = await (await fetch(item.fileData)).blob();
+      await idbPut(id, blob);
+      assetList.push({
+        id,
+        name: "追加画像",
+        point: item.point === "bg" ? "bg" : "face",
+        scale: Number(item.scale) || 1,
+        xOff: Number(item.xOff) || 0,
+        yOff: Number(item.yOff) || 0,
+        mimeType: blob.type,
+        custom: true
+      });
+    } catch {
+      // 読み込めない旧データだけをスキップする。
+    }
+  }
+  persistMetadata();
+  try { localStorage.removeItem(LEGACY_KEY); } catch {}
+}
 
-  if (event && event.target && event.target.tagName !== 'CANVAS') return; 
+function persistMetadata() {
+  const customAssets = assetList.filter((asset) => asset.custom).map(({ id, name, point, scale, xOff, yOff, mimeType, custom }) => ({
+    id, name, point, scale, xOff, yOff, mimeType, custom
+  }));
+  safeStorageSet(STORAGE_KEY, JSON.stringify(customAssets));
+}
 
-  let targetConfig = previewImg ? previewConfig : assetList[currentIndex];
-  if (!targetConfig) return;
+function getAssetImage(asset) {
+  return asset ? images.get(asset.id) : null;
+}
 
-  if (touches.length === 2) {
-    // ✌️ ピンチでスタンプの大きさを変える！
-    let currentPinchDist = dist(touches[0].x, touches[0].y, touches[1].x, touches[1].y);
-    let zoomFactor = currentPinchDist / initialPinchDist;
-    targetConfig.scale = baseStampScale * zoomFactor;
-    return false; 
-  } else if (isDragging) {
-    // 👆 スワイプでスタンプを移動させる！
-    let currentX = touches.length > 0 ? touches[0].x : mouseX;
-    let currentY = touches.length > 0 ? touches[0].y : mouseY;
-    let dx = currentX - lastTouchX;
-    let dy = currentY - lastTouchY;
-    if (isFrontCamera) dx = -dx;
+function getAssetPreviewUrl(asset) {
+  if (!asset || asset.point === "none") return "";
+  if (asset.fileName) return asset.fileName;
+  const image = images.get(asset.id);
+  return image?.canvas?.toDataURL?.("image/png") || image?.src || "";
+}
 
-    targetConfig.xOff = (targetConfig.xOff || 0) + dx;
-    targetConfig.yOff = (targetConfig.yOff || 0) + dy;
+function openDb() {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore(DB_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return dbPromise;
+}
 
-    lastTouchX = currentX;
-    lastTouchY = currentY;
-    return false; 
+async function idbRequest(mode, action) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(DB_STORE, mode);
+    const request = action(transaction.objectStore(DB_STORE));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+const idbPut = (key, value) => idbRequest("readwrite", (store) => store.put(value, key));
+const idbGet = (key) => idbRequest("readonly", (store) => store.get(key));
+const idbDelete = (key) => idbRequest("readwrite", (store) => store.delete(key));
+
+function loadP5Image(url) {
+  return new Promise((resolve, reject) => loadImage(url, resolve, reject));
+}
+
+function loadHtmlImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+function setModal(id, open) {
+  byId(id).hidden = !open;
+}
+
+function setStatus(message) {
+  const status = byId("status-pill");
+  status.textContent = message;
+  status.style.opacity = "1";
+}
+
+function showLoader(message) {
+  byId("loading-screen").hidden = false;
+  byId("loading-screen").style.opacity = "1";
+  byId("loading-screen").querySelector("p").textContent = message;
+}
+
+function hideLoader() {
+  const loader = byId("loading-screen");
+  loader.style.opacity = "0";
+  window.setTimeout(() => { loader.hidden = true; }, 220);
+}
+
+function showCameraError(message) {
+  cameraReady = false;
+  showLoader(message);
+  const spinner = byId("loading-screen").querySelector(".spinner");
+  spinner.hidden = true;
+  setStatus(message);
+}
+
+function showToast(message) {
+  const toast = byId("toast");
+  window.clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.hidden = false;
+  toastTimer = window.setTimeout(() => { toast.hidden = true; }, 2400);
+}
+
+function revokeDraftUrl() {
+  if (draftObjectUrl) URL.revokeObjectURL(draftObjectUrl);
+  draftObjectUrl = "";
+}
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function pointDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value) || min));
+}
+
+function numberOrZero(value) {
+  return Number(value) || 0;
+}
+
+function createId() {
+  return crypto.randomUUID?.() || `asset-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function safeStorageGet(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    showToast("端末に設定を保存できませんでした");
+    return false;
   }
 }
 
-function touchEnded() {
-  if (isDragging || touches.length === 0) {
-    isDragging = false;
-    // 指を離した瞬間に変更を保存
-    localStorage.setItem('myARCameraData_V6', JSON.stringify(assetList));
-  }
+function safeJsonParse(value) {
+  try { return value ? JSON.parse(value) : null; } catch { return null; }
 }
-
-function mouseReleased() { touchEnded(); }

@@ -1,127 +1,409 @@
-/* --- 1. 画面全体の基本設定 --- */
-body {
-  display: flex; margin: 0; overflow: hidden; background-color: #000;
-  font-family: 'Noto Sans JP', sans-serif; font-weight: 900; color: #5C4033; touch-action: none;
+:root {
+  color-scheme: dark;
+  --accent: #ffd400;
+  --panel: rgba(16, 16, 16, 0.94);
+  --line: rgba(255, 255, 255, 0.18);
+  --muted: rgba(255, 255, 255, 0.7);
+  --top-safe: env(safe-area-inset-top, 0px);
+  --bottom-safe: env(safe-area-inset-bottom, 0px);
 }
 
-/* --- 2. カメラエリア --- */
-#camera-container { width: 100vw; height: 100vh; position: absolute; top:0; left:0; }
-canvas { display: block; width: 100% !important; height: 100% !important; object-fit: cover; }
+* { box-sizing: border-box; }
 
-/* --- 3. 設定パネル（ピンクのガラス風！） --- */
-#settings-panel {
-  display: none; width: 400px; height: 100vh; position: fixed; top: 0; right: 0;
-  background: rgba(255, 182, 193, 0.7); backdrop-filter: blur(25px) saturate(160%); -webkit-backdrop-filter: blur(25px) saturate(160%);
-  padding: 30px; box-sizing: border-box; overflow-y: auto; border-left: 1.5px solid rgba(255, 255, 255, 0.5); z-index: 2000;
-}
-
-#close-panel-btn {
-  position: absolute; top: 15px; right: 15px; width: 40px; height: 40px;
-  background: rgba(255, 255, 255, 0.5); border: none; border-radius: 50%;
-  font-size: 24px; color: #5C4033; display: flex; justify-content: center; align-items: center; cursor: pointer; z-index: 2100;
-}
-#close-panel-btn:active { transform: scale(0.9); background: rgba(255, 255, 255, 0.8); }
-
-#switch-camera-btn {
-  position: fixed; top: 15px; right: 15px; width: 44px; height: 44px;
-  background: none; border: none; cursor: pointer; z-index: 1000; display: flex; justify-content: center; align-items: center; padding: 0;
-}
-#switch-camera-btn img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
-#switch-camera-btn:active { transform: scale(0.9); }
-
-/* --- 4. パネル内の項目 --- */
-.setting-item { margin-bottom: 20px; background: rgba(135, 206, 250, 0.4); padding: 15px; border: 1.5px solid rgba(255, 255, 255, 0.5); border-radius: 20px; }
-.part-btn { background: rgba(255, 255, 255, 0.3); border: 1px solid rgba(255, 255, 255, 0.5); color: #5C4033; padding: 10px; border-radius: 12px; cursor: pointer; font-family: inherit; font-weight: bold; width: 100%; margin-bottom: 5px; }
-.part-btn.active { background: rgba(224, 255, 255, 0.9); border: 2px solid #3CB371; color: #2E8B57; }
-.slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.slider-row p { margin: 0; min-width: 50px; font-size: 12px; }
-input[type="range"] { flex-grow: 1; accent-color: #FF69B4; }
-.reset-icon-btn { background: none; border: none; font-size: 16px; cursor: pointer; padding: 0 5px; }
-
-/* --- 5. 追加・保存・削除ボタン系 --- */
-#open-settings-btn {
-  position: fixed; bottom: 40px; left: 20px; padding: 12px 20px; background: #FF69B4; color: white; border: none; border-radius: 25px; font-family: inherit; font-weight: bold; cursor: pointer; z-index: 1000;
-}
-#add-btn { width: 100%; padding: 15px; border-radius: 15px; border: none; background: #FF69B4; color: white; font-weight: bold; font-family: inherit; cursor: pointer; }
-#edit-btns { display: none; gap: 12px; margin-top: 10px; width: 100%; }
-#edit-btns.show-flex { display: flex; }
-#update-btn, #delete-btn { flex: 1; padding: 15px 0; border-radius: 15px; border: none; font-size: 16px; font-weight: bold; font-family: inherit; cursor: pointer; display: flex; justify-content: center; align-items: center; white-space: nowrap; }
-#update-btn { background: #FF69B4; color: white; }
-#delete-btn { background: #ff4757; color: white; }
-
-/* --- 6. アイコンリスト（スタンプ一覧） --- */
-#icon-list {
-  position: fixed; bottom: 130px; left: 0; width: 100%;
-  display: flex; gap: 15px; overflow-x: auto; padding: 10px 20px; z-index: 1000;
-}
-.filter-icon {
-  position: relative; width: 65px; height: 65px; min-width: 65px;
-  border-radius: 50%; border: 3px solid #FFF; background-size: cover; background-position: center;
-}
-.filter-icon.active { border-color: #3CB371; transform: scale(1.1); }
-.edit-badge { position: absolute; top: -5px; right: -5px; background: #87CEFA; border-radius: 50%; width: 24px; height: 24px; display: none; justify-content: center; align-items: center; font-size: 12px; }
-.filter-icon.active .edit-badge { display: flex; }
-
-/* --- 7. オシャレなモード切替UI（写真/動画） --- */
-#capture-container-ui {
-  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 15px; z-index: 1000;
-}
-.mode-selector { display: flex; gap: 20px; color: rgba(255, 255, 255, 0.6); font-size: 14px; font-weight: bold; letter-spacing: 1px; }
-.mode-selector span { cursor: pointer; transition: 0.3s; }
-.mode-selector span.active { color: #FFEB3B; transform: scale(1.2); }
-#shutter-wrapper { width: 80px; height: 80px; border: 4px solid white; border-radius: 50%; display: flex; justify-content: center; align-items: center; padding: 4px; box-sizing: border-box; }
-#main-shutter-btn { width: 100%; height: 100%; background: white; border: none; border-radius: 50%; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; }
-body.mode-video-active #main-shutter-btn { background: #ff4757; }
-#main-shutter-btn.recording { transform: scale(0.6); border-radius: 8px; background: #ff4757; }
-
-/* 🌟 スマホ対応：下3分の1パネル 🌟 */
-@media screen and (max-width: 768px) {
-  #settings-panel { width: 100% !important; height: 35vh !important; top: auto !important; bottom: 0 !important; left: 0 !important; right: 0 !important; border-radius: 30px 30px 0 0; border-left: none; border-top: 1.5px solid rgba(255, 255, 255, 0.5); padding: 20px 15px; }
-  #close-panel-btn { top: 15px; right: 15px; width: 35px; height: 35px; font-size: 20px; }
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #000;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
 }
 
-/* パネル開いた時は各種ボタンを隠す */
-body.split-mode #capture-container-ui, body.split-mode #icon-list, body.split-mode #switch-camera-btn, body.split-mode #open-settings-btn { display: none; }
-body.split-mode #settings-panel { display: block; }
-
-/* 📸 フラッシュ演出 */
-#flash-overlay {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  background: white; opacity: 0; pointer-events: none; z-index: 9999;
-}
-#flash-overlay.active { opacity: 1; transition: none; }
-#flash-overlay.fade { opacity: 0; transition: opacity 0.5s ease-out; }
-/* ⏳ ローディング画面 */
-#loading-screen {
-  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-  background: #FFE4E1; /* 薄いピンク */
-  z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center;
-  color: #5C4033; font-weight: bold; font-size: 18px; transition: opacity 0.5s ease-out;
-}
-.spinner {
-  width: 50px; height: 50px; border: 6px solid rgba(255, 255, 255, 0.6);
-  border-top-color: #FF69B4; border-radius: 50%;
-  animation: spin 1s linear infinite; margin-bottom: 20px;
-}
-@keyframes spin { 100% { transform: rotate(360deg); } }
-/* ✨ スマホのスワイプとスライダー操作を復活させる魔法 ✨ */
-#icon-list, #settings-panel, input[type="range"] {
-  touch-action: auto !important;
-}
-/* ⏱ 動画タイマー */
-#video-timer {
-  position: fixed; top: 40px; left: 50%; transform: translateX(-50%);
-  background: rgba(255, 105, 180, 0.7); /* ピンク */
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  color: white; padding: 5px 20px; border-radius: 20px;
-  font-family: 'Courier New', Courier, monospace; /* 少しレトロな数字フォント */
-  font-weight: bold; font-size: 20px;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  display: none; /* 普段は隠しておく */
-  z-index: 1000;
+button, input { font: inherit; }
+button { color: inherit; }
+button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* 録画中はタイマーを表示する */
-body.recording-active #video-timer {
+#app, #camera-container {
+  position: fixed;
+  inset: 0;
+}
+
+#camera-container {
+  background: #101010;
+  touch-action: none;
+}
+
+canvas {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.top-bar {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  padding: calc(var(--top-safe) + 12px) 14px 12px;
+  pointer-events: none;
+}
+
+.top-actions { display: flex; gap: 10px; }
+
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.42);
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.icon-btn:active { transform: scale(.94); }
+
+#status-pill, #video-timer {
+  position: fixed;
+  z-index: 18;
+  top: calc(var(--top-safe) + 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .52);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#video-timer {
+  display: none;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+body.recording #status-pill { display: none; }
+body.recording #video-timer { display: block; }
+
+.capture-ui {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: calc(var(--bottom-safe) + 106px);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.mode-selector {
+  display: flex;
+  gap: 18px;
+}
+
+.mode-btn {
+  border: 0;
+  padding: 5px 2px;
+  background: transparent;
+  color: rgba(255,255,255,.65);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mode-btn.active { color: var(--accent); }
+
+#main-shutter-btn {
+  width: 76px;
+  height: 76px;
+  padding: 5px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+#main-shutter-btn span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #fff;
+  transition: .18s ease;
+}
+
+body.video-mode #main-shutter-btn span { background: #ff3b30; }
+body.recording #main-shutter-btn span {
+  width: 30px;
+  height: 30px;
+  margin: 16px;
+  border-radius: 6px;
+}
+
+#audio-note {
+  display: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+body.video-mode #audio-note { display: block; }
+
+.effects-dock {
+  position: fixed;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: calc(92px + var(--bottom-safe));
+  padding: 10px 12px calc(10px + var(--bottom-safe));
+  background: rgba(0,0,0,.34);
+}
+
+#icon-list {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#icon-list::-webkit-scrollbar { display: none; }
+
+.effect-add, .filter-icon {
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background-color: rgba(0,0,0,.5);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  cursor: pointer;
+}
+
+.effect-add { font-size: 28px; }
+.filter-icon.active {
+  border: 2px solid var(--accent);
+  transform: scale(1.06);
+}
+.filter-icon[data-empty="true"]::after {
+  content: "なし";
+  font-size: 11px;
+}
+
+#sheet-backdrop {
+  position: fixed;
+  z-index: 39;
+  inset: 0;
+  background: rgba(0,0,0,.3);
+}
+
+.bottom-sheet {
+  position: fixed;
+  z-index: 40;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 18px calc(18px + var(--bottom-safe));
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.sheet-handle {
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 14px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.35);
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.sheet-header h2, .plain-modal h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.text-btn {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.file-button, .primary-btn, .secondary-btn, .danger-btn, .danger-filled-btn {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.file-button, .secondary-btn { background: transparent; }
+.primary-btn { border-color: var(--accent); background: var(--accent); color: #000; font-weight: 650; }
+.danger-btn { margin-right: auto; background: transparent; color: #ff6961; }
+.danger-filled-btn { border-color: #ff453a; background: #ff453a; color: #fff; }
+
+.placement-field {
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+}
+.placement-field legend { margin-bottom: 8px; color: var(--muted); font-size: 12px; }
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.part-btn {
+  min-height: 40px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.part-btn.active { background: rgba(255,255,255,.14); color: #fff; }
+
+.gesture-hint { margin: 12px 0; color: var(--muted); font-size: 12px; }
+.sheet-actions, .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.modal-layer {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0,0,0,.62);
+}
+
+.plain-modal {
+  width: min(100%, 360px);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #171717;
+}
+.plain-modal ol { padding-left: 20px; color: var(--muted); line-height: 1.8; }
+.plain-modal p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.plain-modal > .primary-btn { width: 100%; margin-top: 8px; }
+.plain-modal.compact h2 { margin-bottom: 22px; }
+
+#toast {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  bottom: calc(var(--bottom-safe) + 190px);
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(20,20,20,.92);
+  color: #fff;
+  font-size: 13px;
+  text-align: center;
+}
+
+#loading-screen {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  background: #000;
+  transition: opacity .2s ease;
+}
+#loading-screen p { margin: 0; color: var(--muted); font-size: 13px; }
+.spinner {
+  width: 26px;
+  height: 26px;
+  border: 2px solid rgba(255,255,255,.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#flash-overlay {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  pointer-events: none;
+  background: #fff;
+  opacity: 0;
+}
+#flash-overlay.flash { animation: flash .18s ease-out; }
+@keyframes flash { 0% { opacity: .85; } 100% { opacity: 0; } }
+
+body.sheet-open .capture-ui,
+body.sheet-open .effects-dock { opacity: .28; pointer-events: none; }
+body.recording #switch-camera-btn,
+body.recording #open-settings-btn,
+body.recording #icon-list,
+body.recording .mode-selector { pointer-events: none; opacity: .35; }
+
+[hidden] { display: none !important; }
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .effects-dock {
+    top: 50%;
+    right: 10px;
+    bottom: auto;
+    left: auto;
+    width: 70px;
+    min-height: 0;
+    padding: 8px;
+    transform: translateY(-50%);
+    flex-direction: column;
+    background: rgba(0,0,0,.34);
+    border-radius: 36px;
+  }
+  #icon-list { max-height: 190px; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+  .capture-ui { bottom: calc(var(--bottom-safe) + 14px); }
+  .bottom-sheet { left: auto; width: min(420px, 56vw); height: 100%; overflow: auto; border-left: 1px solid var(--line); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }

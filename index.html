@@ -1,75 +1,103 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>My AR Camera Pro</title>
-    
-    <link rel="icon" href="app_icon.png">
-    <link rel="apple-touch-icon" href="app_icon.png">
-    
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="AR Camera">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>AR Camera</title>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
+  <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
+  <script defer src="sketch.js"></script>
+</head>
+<body>
+  <main id="app" aria-label="ARカメラ">
+    <div id="camera-container" aria-hidden="true"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
-    <script src="https://unpkg.com/ml5@1/dist/ml5.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" type="text/css" href="style.css">
-  </head>
-  <body>
-    <div id="camera-container"></div>
-<div id="video-timer">00:00</div>
-    <div id="settings-panel">
-      <button id="close-panel-btn">×</button>
-      
-      <h3 id="panel-title">新しいイラストを登録</h3>
-      
-      <div class="setting-item" id="upload-section">
-        <label>1. 画像を選ぶ</label>
-        <input type="file" id="file-input" accept="image/*">
+    <header class="top-bar">
+      <button id="close-app-btn" class="icon-btn" type="button" aria-label="閉じる">×</button>
+      <div class="top-actions">
+        <button id="help-btn" class="icon-btn" type="button" aria-label="使い方">?</button>
+        <button id="switch-camera-btn" class="icon-btn" type="button" aria-label="カメラを切り替える">↻</button>
       </div>
-      
-      <div class="setting-item">
-        <label>2. つける場所</label>
-        <div class="parts-selector">
-          <button class="part-btn active" data-point="1">顔（一緒に動く）</button>
-          <button class="part-btn" data-point="bg">背景（固定される）</button>
+    </header>
+
+    <div id="status-pill" role="status" aria-live="polite">カメラを準備中</div>
+    <div id="video-timer" aria-live="off">00:00</div>
+
+    <section class="capture-ui" aria-label="撮影">
+      <div class="mode-selector" role="tablist" aria-label="撮影モード">
+        <button id="mode-photo" class="mode-btn active" type="button" role="tab" aria-selected="true">写真</button>
+        <button id="mode-video" class="mode-btn" type="button" role="tab" aria-selected="false">動画</button>
+      </div>
+      <button id="main-shutter-btn" type="button" aria-label="写真を撮る"><span></span></button>
+      <span id="audio-note">動画は無音です</span>
+    </section>
+
+    <nav class="effects-dock" aria-label="エフェクト">
+      <button id="open-settings-btn" class="effect-add" type="button" aria-label="画像を追加">＋</button>
+      <div id="icon-list" role="list"></div>
+    </nav>
+
+    <div id="sheet-backdrop" hidden></div>
+    <section id="settings-panel" class="bottom-sheet" aria-labelledby="panel-title" aria-modal="true" role="dialog" hidden>
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header">
+        <h2 id="panel-title">エフェクトを追加</h2>
+        <button id="close-panel-btn" class="text-btn" type="button">閉じる</button>
+      </div>
+      <div id="upload-section">
+        <label class="file-button" for="file-input">画像を選ぶ</label>
+        <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp">
+      </div>
+      <fieldset class="placement-field">
+        <legend>表示位置</legend>
+        <div class="segmented">
+          <button class="part-btn active" data-point="face" type="button">顔</button>
+          <button class="part-btn" data-point="bg" type="button">背景</button>
+        </div>
+      </fieldset>
+      <p class="gesture-hint">プレビュー上で移動、2本指で拡大・縮小</p>
+      <div class="sheet-actions">
+        <button id="delete-btn" class="danger-btn" type="button" hidden>削除</button>
+        <button id="cancel-edit-btn" class="secondary-btn" type="button">キャンセル</button>
+        <button id="save-effect-btn" class="primary-btn" type="button">追加</button>
+      </div>
+    </section>
+
+    <section id="tutorial-overlay" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="tutorial-title" hidden>
+      <div class="plain-modal">
+        <h2 id="tutorial-title">使い方</h2>
+        <ol>
+          <li>下の一覧からエフェクトを選びます。</li>
+          <li>中央のボタンで撮影します。</li>
+          <li>追加した画像は長押しで編集できます。</li>
+        </ol>
+        <p>編集画面では画像をドラッグし、2本指で大きさを変えられます。</p>
+        <button id="tutorial-close-btn" class="primary-btn" type="button">わかりました</button>
+      </div>
+    </section>
+
+    <section id="delete-dialog" class="modal-layer" role="alertdialog" aria-modal="true" aria-labelledby="delete-title" hidden>
+      <div class="plain-modal compact">
+        <h2 id="delete-title">エフェクトを削除しますか</h2>
+        <div class="dialog-actions">
+          <button id="delete-cancel-btn" class="secondary-btn" type="button">キャンセル</button>
+          <button id="delete-confirm-btn" class="danger-filled-btn" type="button">削除</button>
         </div>
       </div>
-    
-      
-      <button id="add-btn">この設定で追加！</button>
-      
-      <div id="edit-btns">
-        <button id="update-btn">保存</button>
-        <button id="delete-btn">削除</button>
-      </div>
+    </section>
+
+    <div id="flash-overlay" aria-hidden="true"></div>
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+    <div id="loading-screen" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>カメラを準備中</p>
     </div>
-
-    <button id="open-settings-btn">＋ 追加</button>
-    
-    <button id="switch-camera-btn" title="カメラ切替">
-      <img src="switch_icon.png" alt="カメラ切替">
-    </button>
-    
-    <div id="capture-container-ui">
-      <div class="mode-selector">
-        <span id="mode-photo" class="active">写真</span>
-        <span id="mode-video">動画</span>
-      </div>
-      <div id="shutter-wrapper">
-        <button id="main-shutter-btn"></button>
-      </div>
-    </div>
-
-    <div id="icon-list"></div>
-
-    <script src="sketch.js"></script>
-    <div id="flash-overlay"></div>
-  </body>
-  <div id="loading-screen">
-  <div class="spinner"></div>
-  <p>✨ カメラの準備中...🐾 ✨</p>
-</div>
+  </main>
+</body>
 </html>

@@ -82,9 +82,9 @@ function draw() {
 
   const sourceWidth = video.elt.videoWidth || 720;
   const sourceHeight = video.elt.videoHeight || 1280;
-  const containScale = Math.min(width / sourceWidth, height / sourceHeight);
-  const drawWidth = sourceWidth * containScale;
-  const drawHeight = sourceHeight * containScale;
+  const previewScale = Math.max(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * previewScale;
+  const drawHeight = sourceHeight * previewScale;
   const drawX = (width - drawWidth) / 2;
   const drawY = (height - drawHeight) / 2;
 
@@ -106,7 +106,7 @@ function draw() {
     drawBackgroundStamp(stamp, config);
   } else if (faces.length) {
     for (const face of faces.slice(0, 5)) {
-      drawFaceStamp(stamp, config, face, containScale, drawX, drawY);
+      drawFaceStamp(stamp, config, face, previewScale, drawX, drawY);
     }
   }
 }

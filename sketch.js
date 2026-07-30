@@ -130,8 +130,8 @@ function drawFaceStamp(stamp, config, face, displayedWidth, displayedHeight, dra
   const anchor = face.keypoints[1];
   const left = face.keypoints[234];
   const right = face.keypoints[454];
-  const detectionWidth = video.elt.videoWidth || video.width || displayedWidth;
-  const detectionHeight = video.elt.videoHeight || video.height || displayedHeight;
+  const detectionWidth = video.width || video.elt.videoWidth || displayedWidth;
+  const detectionHeight = video.height || video.elt.videoHeight || displayedHeight;
   const scaleX = displayedWidth / detectionWidth;
   const scaleY = displayedHeight / detectionHeight;
   let x = drawX + anchor.x * scaleX;

@@ -35,6 +35,9 @@ let timerInterval;
 let recordingStartedAt = 0;
 let detectionSession = 0;
 let faceDetectionActive = false;
+let lastFaceResultAt = 0;
+let detectionWatchdogTimer = null;
+let detectionRestarting = false;
 let modelReady = false;
 let cameraReady = false;
 let faceCoordinateSpace = null;
@@ -75,6 +78,7 @@ function setup() {
 
   bindUI();
   bindCanvasGestures(canvas.elt);
+  detectionWatchdogTimer = window.setInterval(checkFaceDetectionHealth, 750);
   loadStoredAssets().finally(() => {
     createIconList();
     startCamera("user");
@@ -227,7 +231,7 @@ function drawFaceMeshDebug(frame) {
 
   noStroke();
   fill(0, 0, 0, 180);
-  rect(8, 72, Math.min(width - 16, 360), 126, 8);
+  rect(8, 72, Math.min(width - 16, 360), 146, 8);
   fill(255);
   textSize(12);
   textAlign(LEFT, TOP);
@@ -243,7 +247,8 @@ function drawFaceMeshDebug(frame) {
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,
     `crop offset: x=${frame.x.toFixed(1)} y=${frame.y.toFixed(1)}`,
-    `mirror: ${isFrontCamera ? "front / ON" : "back / OFF"}  faces: ${faces.length}`
+    `mirror: ${isFrontCamera ? "front / ON" : "back / OFF"}  faces: ${faces.length}`,
+    `result age: ${lastFaceResultAt ? Math.round(performance.now() - lastFaceResultAt) : "-"}ms`
   ].join("\n"), 16, 80);
   pop();
 }
@@ -298,11 +303,13 @@ async function startCamera(facingMode) {
 function beginFaceDetection() {
   if (!faceMesh || !video || !cameraReady) return;
   const session = ++detectionSession;
+  lastFaceResultAt = performance.now();
   try {
     faceDetectionActive = true;
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
-        faces = Array.isArray(results) ? results.slice(0, 5) : [];
+        lastFaceResultAt = performance.now();
+        faces = dedupeFaces(Array.isArray(results) ? results.slice(0, 5) : []);
         inspectFaceCoordinateSpace(faces);
         if (faces.length) {
           const status = byId("status-pill");
@@ -315,6 +322,38 @@ function beginFaceDetection() {
     faceDetectionActive = false;
     setStatus("顔認識を開始できませんでした");
   }
+}
+
+function dedupeFaces(results) {
+  const unique = [];
+  for (const face of results) {
+    const nose = face?.keypoints?.[1];
+    const left = face?.keypoints?.[234];
+    const right = face?.keypoints?.[454];
+    if (!nose || !left || !right) continue;
+    const faceWidth = pointDistance(left, right);
+    const duplicate = unique.some((saved) => {
+      const savedNose = saved.keypoints[1];
+      const savedWidth = pointDistance(saved.keypoints[234], saved.keypoints[454]);
+      const centerDistance = pointDistance(nose, savedNose);
+      const widthRatio = Math.min(faceWidth, savedWidth) / Math.max(1, Math.max(faceWidth, savedWidth));
+      return centerDistance < Math.max(faceWidth, savedWidth) * .35 && widthRatio > .6;
+    });
+    if (!duplicate) unique.push(face);
+  }
+  return unique.slice(0, 5);
+}
+
+function checkFaceDetectionHealth() {
+  if (!cameraReady || !faceDetectionActive || document.hidden || detectionRestarting) return;
+  const resultAge = performance.now() - lastFaceResultAt;
+  if (resultAge > 1200) faces = [];
+  if (resultAge <= 3000) return;
+
+  detectionRestarting = true;
+  stopFaceDetection();
+  if (cameraReady && video && !document.hidden) beginFaceDetection();
+  detectionRestarting = false;
 }
 
 async function getCameraConstraints(facingMode) {
@@ -340,6 +379,7 @@ async function getCameraConstraints(facingMode) {
 function stopFaceDetection() {
   detectionSession += 1;
   faces = [];
+  lastFaceResultAt = 0;
   if (!faceDetectionActive) return;
   try {
     if (faceMesh?.detectStop) faceMesh.detectStop();
@@ -764,6 +804,8 @@ function cleanup() {
   window.clearInterval(timerInterval);
   window.clearTimeout(toastTimer);
   window.clearTimeout(longPressTimer);
+  window.clearInterval(detectionWatchdogTimer);
+  detectionWatchdogTimer = null;
   stopRecordingTracks();
   stopFaceDetection();
   stopCameraTracks();

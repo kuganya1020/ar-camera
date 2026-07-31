@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260731-2035";
+const APP_BUILD = "20260731-portrait-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
@@ -170,9 +170,22 @@ function inspectFaceCoordinateSpace(results) {
   const inputWidth = video?.width || video?.elt?.videoWidth || 0;
   const inputHeight = video?.height || video?.elt?.videoHeight || 0;
   if (maxX <= 1.5 && maxY <= 1.5) {
-    faceCoordinateSpace = { width: 1, height: 1, name: "normalized 0-1" };
+    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", name: "normalized 0-1" };
   } else if (inputWidth > 0 && inputHeight > 0) {
-    faceCoordinateSpace = { width: inputWidth, height: inputHeight, name: "video.width/video.height" };
+    const portraitSensorCoordinates = inputHeight > inputWidth;
+    faceCoordinateSpace = portraitSensorCoordinates
+      ? {
+          width: inputHeight,
+          height: inputWidth,
+          rotation: "clockwise",
+          name: "landscape sensor -> portrait CW"
+        }
+      : {
+          width: inputWidth,
+          height: inputHeight,
+          rotation: "none",
+          name: "video.width/video.height"
+        };
   } else {
     faceCoordinateSpace = null;
   }
@@ -180,9 +193,19 @@ function inspectFaceCoordinateSpace(results) {
 
 function facePointToCanvas(point, frame) {
   if (!point || !faceCoordinateSpace) return null;
-  const rawX = frame.x + point.x * (frame.width / faceCoordinateSpace.width);
+  let sourceX = point.x;
+  let sourceY = point.y;
+  let sourceWidth = faceCoordinateSpace.width;
+  let sourceHeight = faceCoordinateSpace.height;
+  if (faceCoordinateSpace.rotation === "clockwise") {
+    sourceX = faceCoordinateSpace.height - point.y;
+    sourceY = point.x;
+    sourceWidth = faceCoordinateSpace.height;
+    sourceHeight = faceCoordinateSpace.width;
+  }
+  const rawX = frame.x + sourceX * (frame.width / sourceWidth);
   const canvasX = isFrontCamera ? width - rawX : rawX;
-  const canvasY = frame.y + point.y * (frame.height / faceCoordinateSpace.height);
+  const canvasY = frame.y + sourceY * (frame.height / sourceHeight);
   return { x: canvasX, y: canvasY };
 }
 

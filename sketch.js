@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260731-portrait-fix";
+const APP_BUILD = "20260731-offset-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
@@ -255,7 +255,7 @@ function drawFaceMeshDebug(frame) {
 
   noStroke();
   fill(0, 0, 0, 180);
-  rect(8, 72, Math.min(width - 16, 360), 166, 8);
+  rect(8, 72, Math.min(width - 16, 360), 186, 8);
   fill(255);
   textSize(12);
   textAlign(LEFT, TOP);
@@ -265,6 +265,7 @@ function drawFaceMeshDebug(frame) {
   const range = observedFaceRange
     ? `${observedFaceRange.maxX.toFixed(2)}, ${observedFaceRange.maxY.toFixed(2)}`
     : "-";
+  const activeConfig = draftConfig || assetList[currentIndex];
   text([
     `build: ${APP_BUILD}`,
     `FaceMesh基準: ${basis}`,
@@ -273,7 +274,8 @@ function drawFaceMeshDebug(frame) {
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,
     `crop offset: x=${frame.x.toFixed(1)} y=${frame.y.toFixed(1)}`,
     `mirror: ${isFrontCamera ? "front / ON" : "back / OFF"}  faces: ${faces.length}`,
-    `result age: ${lastFaceResultAt ? Math.round(performance.now() - lastFaceResultAt) : "-"}ms`
+    `result age: ${lastFaceResultAt ? Math.round(performance.now() - lastFaceResultAt) : "-"}ms`,
+    `effect offset: x=${numberOrZero(activeConfig?.xOff)} y=${numberOrZero(activeConfig?.yOff)}`
   ].join("\n"), 16, 80);
   pop();
 }
@@ -545,7 +547,7 @@ function selectEffect(index) {
 
 function openAddSheet() {
   editingIndex = -1;
-  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.4, xOff: 0, yOff: -60, custom: true };
+  draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.4, xOff: 0, yOff: 0, custom: true };
   draftImage = null;
   byId("panel-title").textContent = "エフェクトを追加";
   byId("upload-section").hidden = false;
@@ -846,7 +848,13 @@ async function loadStoredAssets() {
   const stored = safeJsonParse(safeStorageGet(STORAGE_KEY));
   if (Array.isArray(stored)) {
     assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }))
-      .concat(stored.filter((asset) => asset?.custom && asset.id));
+      .concat(stored
+        .filter((asset) => asset?.custom && asset.id)
+        .map((asset) => ({
+          ...asset,
+          // 旧版の追加画像へ一律設定していた初期値だけを中立位置へ移行する。
+          yOff: Number(asset.yOff) === -60 ? 0 : asset.yOff
+        })));
   } else {
     assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }));
     await migrateLegacyAssets();

@@ -1,5 +1,6 @@
 "use strict";
 
+const APP_BUILD = "20260731-2035";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
@@ -231,7 +232,7 @@ function drawFaceMeshDebug(frame) {
 
   noStroke();
   fill(0, 0, 0, 180);
-  rect(8, 72, Math.min(width - 16, 360), 146, 8);
+  rect(8, 72, Math.min(width - 16, 360), 166, 8);
   fill(255);
   textSize(12);
   textAlign(LEFT, TOP);
@@ -242,6 +243,7 @@ function drawFaceMeshDebug(frame) {
     ? `${observedFaceRange.maxX.toFixed(2)}, ${observedFaceRange.maxY.toFixed(2)}`
     : "-";
   text([
+    `build: ${APP_BUILD}`,
     `FaceMesh基準: ${basis}`,
     `観測 max(x,y): ${range}`,
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,

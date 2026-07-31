@@ -14,6 +14,7 @@ const DB_NAME = "ar-camera-images";
 const DB_STORE = "images";
 const MAX_UPLOAD_EDGE = 1280;
 const MAX_UPLOAD_PIXELS = 1600000;
+const DEBUG_FACE_MESH = new URLSearchParams(location.search).get("debug") === "1";
 
 let faceMesh;
 let video;
@@ -35,6 +36,8 @@ let detectionSession = 0;
 let faceDetectionActive = false;
 let modelReady = false;
 let cameraReady = false;
+let faceCoordinateSpace = null;
+let observedFaceRange = null;
 let editingIndex = -1;
 let draftConfig = null;
 let draftImage = null;
@@ -81,15 +84,7 @@ function draw() {
   background(12);
   if (!cameraReady || !video || video.elt.readyState < 2) return;
 
-  const sourceWidth = video.width || video.elt.videoWidth || width;
-  const sourceHeight = video.height || video.elt.videoHeight || height;
-  const previewScale = Math.max(width / sourceWidth, height / sourceHeight);
-  const frame = {
-    x: (width - sourceWidth * previewScale) / 2,
-    y: (height - sourceHeight * previewScale) / 2,
-    width: sourceWidth * previewScale,
-    height: sourceHeight * previewScale
-  };
+  const frame = getCameraFrame();
 
   push();
   if (isFrontCamera) {
@@ -101,7 +96,10 @@ function draw() {
 
   const config = draftConfig || assetList[currentIndex];
   const stamp = draftImage || getAssetImage(config);
-  if (!config || config.point === "none" || !stamp) return;
+  if (!config || config.point === "none" || !stamp) {
+    if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
+    return;
+  }
 
   if (config.point === "bg") {
     const backgroundScale = Math.max(width / stamp.width, height / stamp.height) * clamp(config.scale, .2, 6);
@@ -114,6 +112,7 @@ function draw() {
       stamp.height * backgroundScale
     );
     imageMode(CORNER);
+    if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
     return;
   }
 
@@ -132,59 +131,118 @@ function draw() {
     );
     imageMode(CORNER);
   }
+  if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
+}
+
+function getCameraFrame() {
+  // 既存プレビューと同じ優先順を維持する（表示比率を変えない）。
+  const sourceWidth = video?.width || video?.elt?.videoWidth || width;
+  const sourceHeight = video?.height || video?.elt?.videoHeight || height;
+  const scale = Math.max(width / sourceWidth, height / sourceHeight);
+  return {
+    sourceWidth,
+    sourceHeight,
+    scale,
+    x: (width - sourceWidth * scale) / 2,
+    y: (height - sourceHeight * scale) / 2,
+    width: sourceWidth * scale,
+    height: sourceHeight * scale
+  };
+}
+
+function inspectFaceCoordinateSpace(results) {
+  const points = results.flatMap((face) => Array.isArray(face?.keypoints) ? face.keypoints : []);
+  if (!points.length) return;
+  const maxX = Math.max(...points.map((point) => Number(point.x) || 0));
+  const maxY = Math.max(...points.map((point) => Number(point.y) || 0));
+  observedFaceRange = { maxX, maxY };
+
+  const nativeWidth = video?.elt?.videoWidth || 0;
+  const nativeHeight = video?.elt?.videoHeight || 0;
+  if (maxX <= 1.5 && maxY <= 1.5) {
+    faceCoordinateSpace = { width: 1, height: 1, name: "normalized 0-1" };
+  } else if (nativeWidth > 0 && nativeHeight > 0) {
+    faceCoordinateSpace = { width: nativeWidth, height: nativeHeight, name: "videoWidth/videoHeight" };
+  } else {
+    faceCoordinateSpace = null;
+  }
+}
+
+function facePointToCanvas(point, frame) {
+  if (!point || !faceCoordinateSpace) return null;
+  const rawX = frame.x + point.x * (frame.width / faceCoordinateSpace.width);
+  const canvasX = isFrontCamera ? width - rawX : rawX;
+  const canvasY = frame.y + point.y * (frame.height / faceCoordinateSpace.height);
+  return { x: canvasX, y: canvasY };
 }
 
 function resolveFacePlacement(face, frame) {
   if (!face?.keypoints?.[1] || !face.keypoints[234] || !face.keypoints[454]) return null;
-  const anchor = face.keypoints[1];
-  const left = face.keypoints[234];
-  const right = face.keypoints[454];
-  const p5Width = video.width || 0;
-  const p5Height = video.height || 0;
-  const nativeWidth = video.elt.videoWidth || 0;
-  const nativeHeight = video.elt.videoHeight || 0;
-  const candidates = [
-    { width: p5Width, height: p5Height },
-    { width: nativeWidth, height: nativeHeight },
-    { width: nativeHeight, height: nativeWidth },
-    { width: 1, height: 1 }
-  ].filter((candidate, index, list) =>
-    candidate.width > 0 &&
-    candidate.height > 0 &&
-    list.findIndex((item) => item.width === candidate.width && item.height === candidate.height) === index
-  );
+  const nose = facePointToCanvas(face.keypoints[1], frame);
+  const leftCheek = facePointToCanvas(face.keypoints[234], frame);
+  const rightCheek = facePointToCanvas(face.keypoints[454], frame);
+  if (!nose || !leftCheek || !rightCheek) return null;
+  return {
+    x: (leftCheek.x + rightCheek.x) / 2,
+    y: (leftCheek.y + rightCheek.y) / 2,
+    faceWidth: pointDistance(leftCheek, rightCheek),
+    nose,
+    leftCheek,
+    rightCheek
+  };
+}
 
-  let best = null;
-  for (const candidate of candidates) {
-    const scaleX = frame.width / candidate.width;
-    const scaleY = frame.height / candidate.height;
-    const unmirroredX = frame.x + anchor.x * scaleX;
-    const x = isFrontCamera ? width - unmirroredX : unmirroredX;
-    const y = frame.y + anchor.y * scaleY;
-    const faceWidth = Math.abs(right.x - left.x) * scaleX;
-    const faceRatio = faceWidth / width;
-    const outsideX = x < -width * .1 || x > width * 1.1;
-    const outsideY = y < -height * .1 || y > height * 1.1;
-    const invalidSize = faceRatio < .06 || faceRatio > 1.15;
-    const distortion = Math.abs(scaleX - scaleY) / Math.max(scaleX, scaleY);
-    const centerDistance = Math.hypot((x - width / 2) / width, (y - height / 2) / height);
-    const score =
-      (outsideX ? 10 : 0) +
-      (outsideY ? 10 : 0) +
-      (invalidSize ? 8 : 0) +
-      distortion * 3 +
-      centerDistance * .25;
-    if (!best || score < best.score) best = { x, y, faceWidth, score };
+function drawFaceMeshDebug(frame) {
+  push();
+  noFill();
+  stroke(0, 255, 255);
+  strokeWeight(2);
+  rect(frame.x, frame.y, frame.width, frame.height);
+
+  for (const face of faces.slice(0, 5)) {
+    const placement = resolveFacePlacement(face, frame);
+    if (!placement) continue;
+    stroke(255, 70, 70);
+    line(placement.leftCheek.x, placement.leftCheek.y, placement.rightCheek.x, placement.rightCheek.y);
+    noStroke();
+    fill(255, 230, 0);
+    circle(placement.nose.x, placement.nose.y, 10);
+    fill(0, 200, 255);
+    circle(placement.leftCheek.x, placement.leftCheek.y, 10);
+    circle(placement.rightCheek.x, placement.rightCheek.y, 10);
+    fill(255, 70, 190);
+    circle(placement.x, placement.y, 12);
   }
 
-  if (!best || best.score >= 8) return null;
-  return best;
+  noStroke();
+  fill(0, 0, 0, 180);
+  rect(8, 72, Math.min(width - 16, 360), 126, 8);
+  fill(255);
+  textSize(12);
+  textAlign(LEFT, TOP);
+  const basis = faceCoordinateSpace
+    ? `${faceCoordinateSpace.name} ${faceCoordinateSpace.width} x ${faceCoordinateSpace.height}`
+    : "未確定（顔を検出してください）";
+  const range = observedFaceRange
+    ? `${observedFaceRange.maxX.toFixed(2)}, ${observedFaceRange.maxY.toFixed(2)}`
+    : "-";
+  text([
+    `FaceMesh基準: ${basis}`,
+    `観測 max(x,y): ${range}`,
+    `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
+    `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,
+    `crop offset: x=${frame.x.toFixed(1)} y=${frame.y.toFixed(1)}`,
+    `mirror: ${isFrontCamera ? "front / ON" : "back / OFF"}  faces: ${faces.length}`
+  ].join("\n"), 16, 80);
+  pop();
 }
 
 async function startCamera(facingMode) {
   if (isRecording) return;
   cameraReady = false;
   faces = [];
+  faceCoordinateSpace = null;
+  observedFaceRange = null;
   setStatus("カメラを準備中");
   showLoader("カメラを準備中");
   stopFaceDetection();
@@ -234,6 +292,7 @@ function beginFaceDetection() {
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
         faces = Array.isArray(results) ? results.slice(0, 5) : [];
+        inspectFaceCoordinateSpace(faces);
         if (faces.length) {
           const status = byId("status-pill");
           status.textContent = "準備完了";

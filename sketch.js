@@ -159,12 +159,15 @@ function inspectFaceCoordinateSpace(results) {
   const maxY = Math.max(...points.map((point) => Number(point.y) || 0));
   observedFaceRange = { maxX, maxY };
 
-  const nativeWidth = video?.elt?.videoWidth || 0;
-  const nativeHeight = video?.elt?.videoHeight || 0;
+  // ml5へ渡しているp5.MediaElementの座標系を、プレビュー描画と共通で使う。
+  // videoWidth/videoHeightへ置き換えると、顔が画面中心から離れたときに
+  // ランドマークが左上方向へ圧縮されるため、ここでは混在させない。
+  const inputWidth = video?.width || video?.elt?.videoWidth || 0;
+  const inputHeight = video?.height || video?.elt?.videoHeight || 0;
   if (maxX <= 1.5 && maxY <= 1.5) {
     faceCoordinateSpace = { width: 1, height: 1, name: "normalized 0-1" };
-  } else if (nativeWidth > 0 && nativeHeight > 0) {
-    faceCoordinateSpace = { width: nativeWidth, height: nativeHeight, name: "videoWidth/videoHeight" };
+  } else if (inputWidth > 0 && inputHeight > 0) {
+    faceCoordinateSpace = { width: inputWidth, height: inputHeight, name: "video.width/video.height" };
   } else {
     faceCoordinateSpace = null;
   }

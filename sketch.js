@@ -1,10 +1,10 @@
 "use strict";
 
-const APP_BUILD = "20260731-offset-fix";
+const APP_BUILD = "20260731-frame-anchor-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
-  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -60 },
-  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: -100 },
+  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: 0 },
+  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: 0 },
   { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
   { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
 ];

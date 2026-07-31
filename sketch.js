@@ -14,6 +14,7 @@ const DB_NAME = "ar-camera-images";
 const DB_STORE = "images";
 const MAX_UPLOAD_EDGE = 1280;
 const MAX_UPLOAD_PIXELS = 1600000;
+const FACE_OFFSET_REFERENCE_WIDTH = 100;
 const DEBUG_FACE_MESH = new URLSearchParams(location.search).get("debug") === "1";
 
 let faceMesh;
@@ -121,11 +122,12 @@ function draw() {
     if (!placement) continue;
     const stampWidth = placement.faceWidth * clamp(config.scale, .2, 6);
     const stampHeight = stampWidth * (stamp.height / stamp.width);
+    const offsetScale = placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH;
     imageMode(CENTER);
     image(
       stamp,
-      placement.x + numberOrZero(config.xOff),
-      placement.y + numberOrZero(config.yOff),
+      placement.x + numberOrZero(config.xOff) * offsetScale,
+      placement.y + numberOrZero(config.yOff) * offsetScale,
       stampWidth,
       stampHeight
     );
@@ -183,8 +185,10 @@ function resolveFacePlacement(face, frame) {
   const rightCheek = facePointToCanvas(face.keypoints[454], frame);
   if (!nose || !leftCheek || !rightCheek) return null;
   return {
-    x: (leftCheek.x + rightCheek.x) / 2,
-    y: (leftCheek.y + rightCheek.y) / 2,
+    // 組み込みエフェクトの既存オフセットは鼻を基準に調整されている。
+    // 顔幅だけは左右の頬234・454から求め、配置中心は鼻1を使う。
+    x: nose.x,
+    y: nose.y,
     faceWidth: pointDistance(leftCheek, rightCheek),
     nose,
     leftCheek,
@@ -212,6 +216,10 @@ function drawFaceMeshDebug(frame) {
     circle(placement.rightCheek.x, placement.rightCheek.y, 10);
     fill(255, 70, 190);
     circle(placement.x, placement.y, 12);
+    fill(255);
+    textSize(11);
+    textAlign(CENTER, BOTTOM);
+    text(`faceWidth ${placement.faceWidth.toFixed(1)}px`, placement.x, placement.y - 10);
   }
 
   noStroke();
@@ -722,8 +730,9 @@ function bindCanvasGestures(canvas) {
       const [a, b] = [...activePointers.values()];
       draftConfig.scale = clamp(pinchOrigin.scale * pointDistance(a, b) / Math.max(1, pinchOrigin.distance), .2, 6);
     } else if (previous) {
-      draftConfig.xOff += event.clientX - previous.x;
-      draftConfig.yOff += event.clientY - previous.y;
+      const offsetScale = getDraftOffsetScale();
+      draftConfig.xOff += (event.clientX - previous.x) / offsetScale;
+      draftConfig.yOff += (event.clientY - previous.y) / offsetScale;
     }
     event.preventDefault();
   }, { passive: false });
@@ -735,6 +744,12 @@ function bindCanvasGestures(canvas) {
   };
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
+}
+
+function getDraftOffsetScale() {
+  if (draftConfig?.point !== "face" || !faces.length || !video || !cameraReady) return 1;
+  const placement = resolveFacePlacement(faces[0], getCameraFrame());
+  return placement ? Math.max(.1, placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH) : 1;
 }
 
 function windowResized() {

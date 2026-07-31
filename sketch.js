@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260731-frame-anchor-25";
+const APP_BUILD = "20260731-no-close";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -455,11 +455,6 @@ function bindUI() {
     setModal("tutorial-overlay", false);
     safeStorageSet("arCameraTutorialSeen", "1");
   });
-  byId("close-app-btn").addEventListener("click", () => {
-    if (history.length > 1) history.back();
-    else showToast("ブラウザの戻る操作で閉じられます");
-  });
-
   document.querySelectorAll(".part-btn").forEach((button) => {
     button.addEventListener("click", () => {
       if (!draftConfig) return;

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ipad-mirror-fix";
+const APP_BUILD = "20260802-ipad-xy40";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -172,7 +172,7 @@ function inspectFaceCoordinateSpace(results) {
   const inputWidth = video?.width || video?.elt?.videoWidth || 0;
   const inputHeight = video?.height || video?.elt?.videoHeight || 0;
   if (maxX <= 1.5 && maxY <= 1.5) {
-    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", xInset: 0, name: "normalized 0-1" };
+    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", xInset: 0, yInset: 0, name: "normalized 0-1" };
   } else if (inputWidth > 0 && inputHeight > 0) {
     const portraitSensorCoordinates = inputHeight > inputWidth;
     faceCoordinateSpace = portraitSensorCoordinates
@@ -181,6 +181,7 @@ function inspectFaceCoordinateSpace(results) {
           height: inputWidth,
           rotation: "clockwise",
           xInset: 0,
+          yInset: 0,
           name: "landscape sensor -> portrait CW"
         }
       : {
@@ -188,6 +189,7 @@ function inspectFaceCoordinateSpace(results) {
           height: inputHeight,
           rotation: "none",
           xInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 4) : 0,
+          yInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 4) : 0,
           name: IS_IPAD ? "iPad landscape center-crop" : "video.width/video.height"
         };
   } else {
@@ -208,6 +210,7 @@ function facePointToCanvas(point, frame) {
     sourceHeight = faceCoordinateSpace.width;
   } else {
     sourceX -= faceCoordinateSpace.xInset || 0;
+    sourceY -= faceCoordinateSpace.yInset || 0;
   }
   const rawX = frame.x + sourceX * (frame.width / sourceWidth);
   const mirrorFaceCoordinates = isFrontCamera && !IS_IPAD;
@@ -275,7 +278,7 @@ function drawFaceMeshDebug(frame) {
   const activeConfig = draftConfig || assetList[currentIndex];
   text([
     `build: ${APP_BUILD}`,
-    `FaceMesh基準: ${basis}  xInset=${faceCoordinateSpace?.xInset || 0}`,
+    `FaceMesh基準: ${basis}  xInset=${faceCoordinateSpace?.xInset || 0} yInset=${faceCoordinateSpace?.yInset || 0}`,
     `観測 max(x,y): ${range}`,
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,

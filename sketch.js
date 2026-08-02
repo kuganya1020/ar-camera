@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ipad-portrait-canvas";
+const APP_BUILD = "20260802-front-mirror-sync";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -223,7 +223,9 @@ function facePointToCanvas(point, frame) {
     sourceY -= faceCoordinateSpace.yInset || 0;
   }
   const rawX = frame.x + sourceX * (frame.width / sourceWidth);
-  const mirrorFaceCoordinates = isFrontCamera && !IS_IPAD;
+  // 前面カメラ映像はdraw()内で1回だけ反転しているため、
+  // FaceMesh座標にも端末を問わず同じ1回の反転を適用する。
+  const mirrorFaceCoordinates = isFrontCamera;
   const canvasX = mirrorFaceCoordinates ? width - rawX : rawX;
   const canvasY = frame.y + sourceY * (frame.height / sourceHeight);
   return { x: canvasX, y: canvasY };
@@ -293,7 +295,7 @@ function drawFaceMeshDebug(frame) {
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,
     `crop offset: x=${frame.x.toFixed(1)} y=${frame.y.toFixed(1)}`,
-    `video mirror: ${isFrontCamera ? "ON" : "OFF"}  face mirror: ${isFrontCamera && !IS_IPAD ? "ON" : "OFF"}  faces: ${faces.length}`,
+    `video mirror: ${isFrontCamera ? "ON" : "OFF"}  face mirror: ${isFrontCamera ? "ON" : "OFF"}  faces: ${faces.length}`,
     `result age: ${lastFaceResultAt ? Math.round(performance.now() - lastFaceResultAt) : "-"}ms`,
     `effect offset: x=${numberOrZero(activeConfig?.xOff)} y=${numberOrZero(activeConfig?.yOff)}`
   ].join("\n"), 16, 80);

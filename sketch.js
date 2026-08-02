@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-model-ready-fix";
+const APP_BUILD = "20260802-low-memory-startup";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -103,35 +103,21 @@ function initializeFaceMesh() {
   if (modelLoading || modelReady || faceMesh) return;
   modelLoading = true;
   setStatus("顔認識を準備中");
-
-  const finishModelLoading = (loadedModel) => {
-    if (loadedModel?.detectStart) faceMesh = loadedModel;
-    if (modelReady || !faceMesh?.detectStart) return;
-    modelReady = true;
-    modelLoading = false;
-    if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
-  };
-
-  const failModelLoading = (error) => {
+  try {
+    faceMesh = ml5.faceMesh({
+      maxFaces: 5,
+      flipHorizontal: false,
+      callback: () => {
+        modelReady = true;
+        modelLoading = false;
+        if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
+      }
+    });
+  } catch (error) {
     modelLoading = false;
     faceMesh = null;
     console.error("FaceMesh initialization failed", error);
     setStatus("顔認識を開始できませんでした");
-  };
-
-  try {
-    const createdModel = ml5.faceMesh({
-      maxFaces: 5,
-      flipHorizontal: false,
-      callback: finishModelLoading
-    });
-    if (createdModel?.then) {
-      createdModel.then(finishModelLoading).catch(failModelLoading);
-    } else {
-      faceMesh = createdModel;
-    }
-  } catch (error) {
-    failModelLoading(error);
   }
 }
 

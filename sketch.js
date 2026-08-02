@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ui-polish";
+const APP_BUILD = "20260802-low-memory-startup";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -19,6 +19,10 @@ const MAX_UPLOAD_EDGE = 1280;
 const MAX_UPLOAD_PIXELS = 1600000;
 const FACE_OFFSET_REFERENCE_WIDTH = 100;
 const DEBUG_FACE_MESH = new URLSearchParams(location.search).get("debug") === "1";
+const DEVICE_MEMORY_GB = Number(navigator.deviceMemory) || 0;
+const CPU_CORES = Number(navigator.hardwareConcurrency) || 0;
+const IS_LOW_MEMORY_DEVICE = (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4) ||
+  (CPU_CORES > 0 && CPU_CORES <= 4);
 
 let faceMesh;
 let video;
@@ -42,6 +46,7 @@ let lastFaceResultAt = 0;
 let detectionWatchdogTimer = null;
 let detectionRestarting = false;
 let modelReady = false;
+let modelLoading = false;
 let cameraReady = false;
 let faceCoordinateSpace = null;
 let observedFaceRange = null;
@@ -59,8 +64,6 @@ let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
 
 function preload() {
-  faceMesh = ml5.faceMesh({ maxFaces: 5, flipHorizontal: false });
-  modelReady = true;
   for (const asset of DEFAULT_ASSETS) {
     if (asset.fileName) {
       images.set(asset.id, loadImage(asset.fileName, undefined, () => {
@@ -71,11 +74,9 @@ function preload() {
 }
 
 function setup() {
-  const density = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4
-    ? 1
-    : Math.min(window.devicePixelRatio || 1, 1.5);
+  const density = IS_LOW_MEMORY_DEVICE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   pixelDensity(density);
-  frameRate(navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4 ? 24 : 30);
+  frameRate(IS_LOW_MEMORY_DEVICE ? 24 : 30);
 
   const initialViewport = getViewportSize();
   const canvas = createCanvas(initialViewport.width, initialViewport.height);
@@ -96,6 +97,28 @@ function setup() {
     createIconList();
     startCamera("user");
   });
+}
+
+function initializeFaceMesh() {
+  if (modelLoading || modelReady || faceMesh) return;
+  modelLoading = true;
+  setStatus("顔認識を準備中");
+  try {
+    faceMesh = ml5.faceMesh({
+      maxFaces: 5,
+      flipHorizontal: false,
+      callback: () => {
+        modelReady = true;
+        modelLoading = false;
+        if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
+      }
+    });
+  } catch (error) {
+    modelLoading = false;
+    faceMesh = null;
+    console.error("FaceMesh initialization failed", error);
+    setStatus("顔認識を開始できませんでした");
+  }
 }
 
 function draw() {
@@ -332,7 +355,9 @@ async function startCamera(facingMode) {
       try { await video.elt.play(); } catch {}
       cameraReady = true;
       hideLoader();
-      setStatus("顔を認識中");
+      setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
+      // カメラ映像を先に表示し、その次の描画フレームで重いモデルを読み込む。
+      if (!modelReady && !modelLoading) requestAnimationFrame(initializeFaceMesh);
       beginFaceDetection();
     });
     video.hide();
@@ -350,7 +375,7 @@ async function startCamera(facingMode) {
 }
 
 function beginFaceDetection() {
-  if (!faceMesh || !video || !cameraReady) return;
+  if (!faceMesh || !modelReady || !video || !cameraReady || faceDetectionActive) return;
   const session = ++detectionSession;
   lastFaceResultAt = performance.now();
   try {

@@ -1,6 +1,8 @@
 "use strict";
 
-const APP_BUILD = "20260731-no-close";
+const APP_BUILD = "20260802-ipad-x-fix";
+const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
+  (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -170,7 +172,7 @@ function inspectFaceCoordinateSpace(results) {
   const inputWidth = video?.width || video?.elt?.videoWidth || 0;
   const inputHeight = video?.height || video?.elt?.videoHeight || 0;
   if (maxX <= 1.5 && maxY <= 1.5) {
-    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", name: "normalized 0-1" };
+    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", xInset: 0, name: "normalized 0-1" };
   } else if (inputWidth > 0 && inputHeight > 0) {
     const portraitSensorCoordinates = inputHeight > inputWidth;
     faceCoordinateSpace = portraitSensorCoordinates
@@ -178,13 +180,15 @@ function inspectFaceCoordinateSpace(results) {
           width: inputHeight,
           height: inputWidth,
           rotation: "clockwise",
+          xInset: 0,
           name: "landscape sensor -> portrait CW"
         }
       : {
           width: inputWidth,
           height: inputHeight,
           rotation: "none",
-          name: "video.width/video.height"
+          xInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 2) : 0,
+          name: IS_IPAD ? "iPad landscape center-crop" : "video.width/video.height"
         };
   } else {
     faceCoordinateSpace = null;
@@ -202,6 +206,8 @@ function facePointToCanvas(point, frame) {
     sourceY = point.x;
     sourceWidth = faceCoordinateSpace.height;
     sourceHeight = faceCoordinateSpace.width;
+  } else {
+    sourceX -= faceCoordinateSpace.xInset || 0;
   }
   const rawX = frame.x + sourceX * (frame.width / sourceWidth);
   const canvasX = isFrontCamera ? width - rawX : rawX;
@@ -268,7 +274,7 @@ function drawFaceMeshDebug(frame) {
   const activeConfig = draftConfig || assetList[currentIndex];
   text([
     `build: ${APP_BUILD}`,
-    `FaceMesh基準: ${basis}`,
+    `FaceMesh基準: ${basis}  xInset=${faceCoordinateSpace?.xInset || 0}`,
     `観測 max(x,y): ${range}`,
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,

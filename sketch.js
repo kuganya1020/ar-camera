@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-front-mirror-sync";
+const APP_BUILD = "20260802-landscape-stability";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -395,6 +395,7 @@ function dedupeFaces(results) {
 }
 
 function stabilizeFaces(results, previousFaces) {
+  const landscape = width > height;
   const usedPrevious = new Set();
   return results.map((face) => {
     const nose = face.keypoints[1];
@@ -423,7 +424,12 @@ function stabilizeFaces(results, previousFaces) {
       const previousPoint = previous.keypoints[index];
       if (!currentPoint || !previousPoint) continue;
       const movementRatio = pointDistance(currentPoint, previousPoint) / faceWidth;
-      const alpha = clamp(.2 + movementRatio * 3, .2, .85);
+      // 横向きでは顔が入力内で小さくなりやすく、頬の数pxの誤差が
+      // エフェクト全体の位置・大きさへ増幅されるため微小振動を強く抑える。
+      // 大きな移動時はalphaを上げ、追従が遅れすぎないようにする。
+      const alpha = landscape
+        ? clamp(.12 + movementRatio * 2.4, .12, .7)
+        : clamp(.2 + movementRatio * 3, .2, .85);
       stabilized.keypoints[index] = {
         ...currentPoint,
         x: previousPoint.x + (currentPoint.x - previousPoint.x) * alpha,
@@ -539,6 +545,10 @@ function bindUI() {
     }
   });
   window.addEventListener("orientationchange", () => {
+    // 回転前後ではFaceMeshの座標基準が変わるため、古い平滑化座標を混ぜない。
+    faces = [];
+    faceCoordinateSpace = null;
+    observedFaceRange = null;
     scheduleCanvasResize();
     if (isRecording) {
       stopRecording();

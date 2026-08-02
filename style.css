@@ -220,8 +220,6 @@ body.video-mode #audio-note { display: block; }
   z-index: 39;
   inset: 0;
   background: rgba(0,0,0,.3);
-  /* 編集中のプレビュー操作をCanvasへ通す。閉じる操作はシート内ボタンで行う。 */
-  pointer-events: none;
 }
 
 .bottom-sheet {

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-preview-gesture-fix";
+const APP_BUILD = "20260802-button-editor";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -90,7 +90,6 @@ function setup() {
   window.visualViewport?.addEventListener("resize", scheduleCanvasResize);
 
   bindUI();
-  bindCanvasGestures(canvas.elt);
   detectionWatchdogTimer = window.setInterval(checkFaceDetectionHealth, 750);
   loadStoredAssets().finally(() => {
     createIconList();
@@ -520,6 +519,7 @@ function bindUI() {
   });
   byId("close-panel-btn").addEventListener("click", cancelSheet);
   byId("cancel-edit-btn").addEventListener("click", cancelSheet);
+  byId("sheet-backdrop").addEventListener("click", cancelSheet);
   byId("file-input").addEventListener("change", handleImageUpload);
   byId("save-effect-btn").addEventListener("click", saveEffect);
   byId("delete-btn").addEventListener("click", () => setModal("delete-dialog", true));

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ipad-x40-y0";
+const APP_BUILD = "20260802-ipad-portrait-canvas";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -55,6 +55,8 @@ let dbPromise;
 const activePointers = new Map();
 let dragOrigin = null;
 let pinchOrigin = null;
+let canvasResizeObserver = null;
+let canvasResizeFrame = 0;
 
 function preload() {
   faceMesh = ml5.faceMesh({ maxFaces: 5, flipHorizontal: false });
@@ -75,9 +77,17 @@ function setup() {
   pixelDensity(density);
   frameRate(navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4 ? 24 : 30);
 
-  const canvas = createCanvas(windowWidth, windowHeight);
+  const initialViewport = getViewportSize();
+  const canvas = createCanvas(initialViewport.width, initialViewport.height);
   canvas.parent("camera-container");
   canvas.elt.setAttribute("aria-label", "カメラプレビュー");
+
+  const cameraContainer = byId("camera-container");
+  if (window.ResizeObserver) {
+    canvasResizeObserver = new ResizeObserver(() => scheduleCanvasResize());
+    canvasResizeObserver.observe(cameraContainer);
+  }
+  window.visualViewport?.addEventListener("resize", scheduleCanvasResize);
 
   bindUI();
   bindCanvasGestures(canvas.elt);
@@ -527,6 +537,7 @@ function bindUI() {
     }
   });
   window.addEventListener("orientationchange", () => {
+    scheduleCanvasResize();
     if (isRecording) {
       stopRecording();
       showToast("画面が回転したため録画を停止しました");
@@ -871,8 +882,33 @@ function getDraftOffsetScale() {
   return placement ? Math.max(.1, placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH) : 1;
 }
 
+function getViewportSize() {
+  const container = document.getElementById("camera-container");
+  const bounds = container?.getBoundingClientRect();
+  const viewport = window.visualViewport;
+  const viewportWidth = viewport?.width || document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = viewport?.height || document.documentElement.clientHeight || window.innerHeight;
+  return {
+    width: Math.max(1, Math.round(bounds?.width || viewportWidth)),
+    height: Math.max(1, Math.round(bounds?.height || viewportHeight))
+  };
+}
+
+function syncCanvasToViewport() {
+  canvasResizeFrame = 0;
+  const next = getViewportSize();
+  if (width !== next.width || height !== next.height) {
+    resizeCanvas(next.width, next.height);
+  }
+}
+
+function scheduleCanvasResize() {
+  if (canvasResizeFrame) cancelAnimationFrame(canvasResizeFrame);
+  canvasResizeFrame = requestAnimationFrame(syncCanvasToViewport);
+}
+
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  scheduleCanvasResize();
 }
 
 function cleanup() {
@@ -882,6 +918,11 @@ function cleanup() {
   window.clearTimeout(longPressTimer);
   window.clearInterval(detectionWatchdogTimer);
   detectionWatchdogTimer = null;
+  if (canvasResizeFrame) cancelAnimationFrame(canvasResizeFrame);
+  canvasResizeFrame = 0;
+  canvasResizeObserver?.disconnect();
+  canvasResizeObserver = null;
+  window.visualViewport?.removeEventListener("resize", scheduleCanvasResize);
   stopRecordingTracks();
   stopFaceDetection();
   stopCameraTracks();

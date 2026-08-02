@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-facemesh-preload-fix";
+const APP_BUILD = "20260802-placement-smoothing";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -62,6 +62,8 @@ let dragOrigin = null;
 let pinchOrigin = null;
 let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
+let nextFaceTrackId = 1;
+const facePlacementStates = new Map();
 
 function preload() {
   faceMesh = ml5.faceMesh({
@@ -246,7 +248,7 @@ function resolveFacePlacement(face, frame) {
   const leftCheek = facePointToCanvas(face.keypoints[234], frame);
   const rightCheek = facePointToCanvas(face.keypoints[454], frame);
   if (!nose || !leftCheek || !rightCheek) return null;
-  return {
+  const rawPlacement = {
     // 組み込みエフェクトの既存オフセットは鼻を基準に調整されている。
     // 顔幅だけは左右の頬234・454から求め、配置中心は鼻1を使う。
     x: nose.x,
@@ -256,6 +258,61 @@ function resolveFacePlacement(face, frame) {
     leftCheek,
     rightCheek
   };
+
+  const trackId = face._trackId;
+  if (!trackId) return rawPlacement;
+
+  const now = performance.now();
+  const frameKey = `${width}x${height}:${frame.x.toFixed(2)}:${frame.y.toFixed(2)}:${frame.scale.toFixed(4)}`;
+  const previous = facePlacementStates.get(trackId);
+  if (!previous || previous.frameKey !== frameKey) {
+    facePlacementStates.set(trackId, { ...rawPlacement, face, updatedAt: now, frameKey });
+    return rawPlacement;
+  }
+
+  // draw()とデバッグ描画から同じ検出結果を複数回参照しても、
+  // 1回の検出につき1回だけ平滑化する。
+  if (previous.face === face) return previous;
+
+  const previousWidth = Math.max(1, previous.faceWidth);
+  let targetX = rawPlacement.x;
+  let targetY = rawPlacement.y;
+  let targetWidth = rawPlacement.faceWidth;
+  const centerDistance = Math.hypot(targetX - previous.x, targetY - previous.y);
+  const movementRatio = centerDistance / previousWidth;
+  const widthChangeRatio = Math.abs(targetWidth - previousWidth) / previousWidth;
+
+  // 1フレームだけ大きく飛ぶ誤検出を、顔幅に比例した範囲へ抑える。
+  const maxCenterStep = previousWidth * .45;
+  if (centerDistance > maxCenterStep) {
+    const stepRatio = maxCenterStep / centerDistance;
+    targetX = previous.x + (targetX - previous.x) * stepRatio;
+    targetY = previous.y + (targetY - previous.y) * stepRatio;
+  }
+  targetWidth = clamp(targetWidth, previousWidth * .82, previousWidth * 1.18);
+
+  // 顔幅の約1.2%未満の揺れは止める。移動が大きいほど追従を速くする。
+  const centerDeadZone = previousWidth * .012;
+  if (Math.abs(targetX - previous.x) < centerDeadZone) targetX = previous.x;
+  if (Math.abs(targetY - previous.y) < centerDeadZone) targetY = previous.y;
+  if (widthChangeRatio < .015) targetWidth = previousWidth;
+
+  const elapsedFrames = clamp((now - previous.updatedAt) / 33.333, .5, 3);
+  const centerBaseAlpha = clamp(.14 + movementRatio * 2.4, .14, .82);
+  const widthBaseAlpha = clamp(.1 + widthChangeRatio * 2, .1, .58);
+  const centerAlpha = 1 - Math.pow(1 - centerBaseAlpha, elapsedFrames);
+  const widthAlpha = 1 - Math.pow(1 - widthBaseAlpha, elapsedFrames);
+  const smoothed = {
+    ...rawPlacement,
+    x: previous.x + (targetX - previous.x) * centerAlpha,
+    y: previous.y + (targetY - previous.y) * centerAlpha,
+    faceWidth: previousWidth + (targetWidth - previousWidth) * widthAlpha,
+    face,
+    updatedAt: now,
+    frameKey
+  };
+  facePlacementStates.set(trackId, smoothed);
+  return smoothed;
 }
 
 function drawFaceMeshDebug(frame) {
@@ -369,6 +426,10 @@ function beginFaceDetection() {
         lastFaceResultAt = performance.now();
         const uniqueFaces = dedupeFaces(Array.isArray(results) ? results.slice(0, 5) : []);
         faces = stabilizeFaces(uniqueFaces, faces);
+        const activeTrackIds = new Set(faces.map((face) => face._trackId));
+        for (const trackId of facePlacementStates.keys()) {
+          if (!activeTrackIds.has(trackId)) facePlacementStates.delete(trackId);
+        }
         inspectFaceCoordinateSpace(faces);
         if (!byId("settings-panel").hidden) syncEditorStatus();
         if (faces.length) {
@@ -405,7 +466,6 @@ function dedupeFaces(results) {
 }
 
 function stabilizeFaces(results, previousFaces) {
-  const landscape = width > height;
   const usedPrevious = new Set();
   return results.map((face) => {
     const nose = face.keypoints[1];
@@ -424,32 +484,10 @@ function stabilizeFaces(results, previousFaces) {
       }
     });
 
-    if (matchIndex < 0) return face;
+    if (matchIndex < 0) return { ...face, _trackId: nextFaceTrackId++ };
     usedPrevious.add(matchIndex);
     const previous = previousFaces[matchIndex];
-    const stabilized = { ...face, keypoints: face.keypoints.slice() };
-
-    for (const index of [1, 234, 454]) {
-      const currentPoint = face.keypoints[index];
-      const previousPoint = previous.keypoints[index];
-      if (!currentPoint || !previousPoint) continue;
-      const movementRatio = pointDistance(currentPoint, previousPoint) / faceWidth;
-      // 横向きでは顔が入力内で小さくなりやすく、頬の数pxの誤差が
-      // エフェクト全体の位置・大きさへ増幅されるため微小振動を強く抑える。
-      // 大きな移動時はalphaを上げ、追従が遅れすぎないようにする。
-      const alpha = landscape
-        ? clamp(.12 + movementRatio * 2.4, .12, .7)
-        : clamp(.2 + movementRatio * 3, .2, .85);
-      stabilized.keypoints[index] = {
-        ...currentPoint,
-        x: previousPoint.x + (currentPoint.x - previousPoint.x) * alpha,
-        y: previousPoint.y + (currentPoint.y - previousPoint.y) * alpha,
-        z: Number.isFinite(currentPoint.z) && Number.isFinite(previousPoint.z)
-          ? previousPoint.z + (currentPoint.z - previousPoint.z) * alpha
-          : currentPoint.z
-      };
-    }
-    return stabilized;
+    return { ...face, _trackId: previous._trackId || nextFaceTrackId++ };
   });
 }
 
@@ -488,6 +526,7 @@ async function getCameraConstraints(facingMode) {
 function stopFaceDetection() {
   detectionSession += 1;
   faces = [];
+  facePlacementStates.clear();
   lastFaceResultAt = 0;
   if (!faceDetectionActive) return;
   try {

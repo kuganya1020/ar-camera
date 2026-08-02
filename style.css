@@ -397,6 +397,19 @@ body.video-mode #audio-note { display: block; }
   font-size: 14px;
   font-weight: 650;
 }
+.adjustment-hint {
+  position: absolute;
+  top: calc(var(--top-safe) + 62px);
+  left: 50%;
+  margin: 0;
+  padding: 6px 11px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(0,0,0,.48);
+  color: rgba(255,255,255,.82);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .overlay-text-btn, .overlay-save-btn {
   min-height: 40px;
   border: 0;

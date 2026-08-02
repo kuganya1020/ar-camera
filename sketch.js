@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-fullscreen-editor";
+const APP_BUILD = "20260802-fullscreen-gestures";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -90,6 +90,7 @@ function setup() {
   window.visualViewport?.addEventListener("resize", scheduleCanvasResize);
 
   bindUI();
+  bindCanvasGestures(canvas.elt);
   detectionWatchdogTimer = window.setInterval(checkFaceDetectionHealth, 750);
   loadStoredAssets().finally(() => {
     createIconList();
@@ -939,7 +940,7 @@ async function shareOrDownload(blob, fileName, type, title) {
 
 function bindCanvasGestures(canvas) {
   canvas.addEventListener("pointerdown", (event) => {
-    if (!document.body.classList.contains("sheet-open") || !draftConfig) return;
+    if (!document.body.classList.contains("adjustment-mode") || !draftConfig) return;
     canvas.setPointerCapture(event.pointerId);
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (activePointers.size === 1) {

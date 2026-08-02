@@ -11,10 +11,10 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260802-fullscreen-editor">
+  <link rel="stylesheet" href="style.css?v=20260802-fullscreen-gestures">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260802-fullscreen-editor"></script>
+  <script defer src="sketch.js?v=20260802-fullscreen-gestures"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -80,6 +80,7 @@
         <strong>位置を調整</strong>
         <button id="adjustment-save-btn" class="overlay-save-btn" type="button">保存</button>
       </header>
+      <p class="adjustment-hint">1本指で移動・2本指で拡大縮小</p>
       <div class="adjustment-toolbar">
         <div class="toolbar-position">
           <span class="toolbar-label">位置</span>

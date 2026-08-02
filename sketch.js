@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-placement-smoothing";
+const APP_BUILD = "20260802-background-width-fit";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -131,7 +131,9 @@ function draw() {
   }
 
   if (config.point === "bg") {
-    const backgroundScale = Math.max(width / stamp.width, height / stamp.height) * clamp(config.scale, .2, 6);
+    // 背景・フレーム画像は横幅をCanvasへ合わせ、画像の縦横比を維持する。
+    // config.scale=1のとき、画像の横幅と画面の横幅が完全に一致する。
+    const backgroundScale = (width / stamp.width) * clamp(config.scale, .2, 6);
     imageMode(CENTER);
     image(
       stamp,

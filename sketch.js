@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-low-memory-startup";
+const APP_BUILD = "20260802-facemesh-preload-fix";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -64,6 +64,11 @@ let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
 
 function preload() {
+  faceMesh = ml5.faceMesh({
+    maxFaces: 5,
+    flipHorizontal: false
+  });
+
   for (const asset of DEFAULT_ASSETS) {
     if (asset.fileName) {
       images.set(asset.id, loadImage(asset.fileName, undefined, () => {
@@ -74,6 +79,9 @@ function preload() {
 }
 
 function setup() {
+  modelReady = Boolean(faceMesh?.detectStart);
+  modelLoading = false;
+
   const density = IS_LOW_MEMORY_DEVICE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   pixelDensity(density);
   frameRate(IS_LOW_MEMORY_DEVICE ? 24 : 30);
@@ -97,28 +105,6 @@ function setup() {
     createIconList();
     startCamera("user");
   });
-}
-
-function initializeFaceMesh() {
-  if (modelLoading || modelReady || faceMesh) return;
-  modelLoading = true;
-  setStatus("顔認識を準備中");
-  try {
-    faceMesh = ml5.faceMesh({
-      maxFaces: 5,
-      flipHorizontal: false,
-      callback: () => {
-        modelReady = true;
-        modelLoading = false;
-        if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
-      }
-    });
-  } catch (error) {
-    modelLoading = false;
-    faceMesh = null;
-    console.error("FaceMesh initialization failed", error);
-    setStatus("顔認識を開始できませんでした");
-  }
 }
 
 function draw() {
@@ -355,9 +341,7 @@ async function startCamera(facingMode) {
       try { await video.elt.play(); } catch {}
       cameraReady = true;
       hideLoader();
-      setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
-      // カメラ映像を先に表示し、その次の描画フレームで重いモデルを読み込む。
-      if (!modelReady && !modelLoading) requestAnimationFrame(initializeFaceMesh);
+      setStatus(modelReady ? "顔を認識中" : "顔認識を開始できませんでした");
       beginFaceDetection();
     });
     video.hide();

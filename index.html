@@ -11,10 +11,10 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260802-button-editor">
+  <link rel="stylesheet" href="style.css?v=20260802-fullscreen-editor">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260802-button-editor"></script>
+  <script defer src="sketch.js?v=20260802-fullscreen-editor"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -66,8 +66,23 @@
           </div>
         </fieldset>
         <p id="face-edit-status" class="edit-status" role="status">画像を選んでください</p>
-        <div class="adjustment-section">
-          <p class="step-label"><span>3</span>位置と大きさを調整</p>
+      </div>
+      <div class="sheet-actions">
+        <button id="delete-btn" class="danger-btn" type="button" hidden>削除</button>
+        <button id="cancel-edit-btn" class="secondary-btn" type="button">キャンセル</button>
+        <button id="save-effect-btn" class="primary-btn" type="button">位置を調整</button>
+      </div>
+    </section>
+
+    <section id="adjustment-mode" class="adjustment-overlay" aria-label="エフェクトの位置調整" hidden>
+      <header class="adjustment-header">
+        <button id="adjustment-cancel-btn" class="overlay-text-btn" type="button">キャンセル</button>
+        <strong>位置を調整</strong>
+        <button id="adjustment-save-btn" class="overlay-save-btn" type="button">保存</button>
+      </header>
+      <div class="adjustment-toolbar">
+        <div class="toolbar-position">
+          <span class="toolbar-label">位置</span>
           <div class="nudge-grid" aria-label="位置を微調整">
             <button class="adjust-btn nudge-up" data-adjust="up" type="button" aria-label="上へ移動">↑</button>
             <button class="adjust-btn nudge-left" data-adjust="left" type="button" aria-label="左へ移動">←</button>
@@ -75,18 +90,13 @@
             <button class="adjust-btn nudge-right" data-adjust="right" type="button" aria-label="右へ移動">→</button>
             <button class="adjust-btn nudge-down" data-adjust="down" type="button" aria-label="下へ移動">↓</button>
           </div>
-          <div class="scale-controls" aria-label="大きさを調整">
-            <span>大きさ</span>
-            <button class="adjust-btn" data-scale="down" type="button" aria-label="小さくする">−</button>
-            <output id="effect-scale-value">100%</output>
-            <button class="adjust-btn" data-scale="up" type="button" aria-label="大きくする">＋</button>
-          </div>
         </div>
-      </div>
-      <div class="sheet-actions">
-        <button id="delete-btn" class="danger-btn" type="button" hidden>削除</button>
-        <button id="cancel-edit-btn" class="secondary-btn" type="button">キャンセル</button>
-        <button id="save-effect-btn" class="primary-btn" type="button">追加</button>
+        <div class="scale-controls" aria-label="大きさを調整">
+          <span>大きさ</span>
+          <button class="adjust-btn" data-scale="down" type="button" aria-label="小さくする">−</button>
+          <output id="effect-scale-value">1.00×</output>
+          <button class="adjust-btn" data-scale="up" type="button" aria-label="大きくする">＋</button>
+        </div>
       </div>
     </section>
 
@@ -96,9 +106,9 @@
         <ol>
           <li>下の一覧からエフェクトを選びます。</li>
           <li>中央のボタンで撮影します。</li>
-          <li>追加した画像は長押しで編集できます。</li>
+          <li>追加した画像は「編集」ボタンから調整できます。</li>
         </ol>
-        <p>編集画面では画像をドラッグし、2本指で大きさを変えられます。</p>
+        <p>追加画像は、全画面の調整モードで位置と大きさを変更できます。</p>
         <button id="tutorial-close-btn" class="primary-btn" type="button">わかりました</button>
       </div>
     </section>

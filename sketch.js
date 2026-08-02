@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-button-editor";
+const APP_BUILD = "20260802-fullscreen-editor";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -521,7 +521,9 @@ function bindUI() {
   byId("cancel-edit-btn").addEventListener("click", cancelSheet);
   byId("sheet-backdrop").addEventListener("click", cancelSheet);
   byId("file-input").addEventListener("change", handleImageUpload);
-  byId("save-effect-btn").addEventListener("click", saveEffect);
+  byId("save-effect-btn").addEventListener("click", enterAdjustmentMode);
+  byId("adjustment-cancel-btn").addEventListener("click", cancelSheet);
+  byId("adjustment-save-btn").addEventListener("click", saveEffect);
   byId("delete-btn").addEventListener("click", () => setModal("delete-dialog", true));
   byId("delete-cancel-btn").addEventListener("click", () => setModal("delete-dialog", false));
   byId("delete-confirm-btn").addEventListener("click", deleteEffect);
@@ -637,7 +639,7 @@ function openAddSheet() {
   byId("panel-title").textContent = "エフェクトを追加";
   byId("upload-section").hidden = false;
   byId("delete-btn").hidden = true;
-  byId("save-effect-btn").textContent = "追加";
+  byId("save-effect-btn").textContent = "位置を調整";
   byId("file-input").value = "";
   syncPlacementButtons();
   setSheet(true);
@@ -653,7 +655,7 @@ function openEditSheet(index) {
   byId("panel-title").textContent = "エフェクトを編集";
   byId("upload-section").hidden = true;
   byId("delete-btn").hidden = Boolean(assetList[index].builtIn);
-  byId("save-effect-btn").textContent = "保存";
+  byId("save-effect-btn").textContent = "位置を調整";
   syncPlacementButtons();
   setSheet(true);
   syncEditorUI();
@@ -665,7 +667,21 @@ function cancelSheet() {
   draftImage = null;
   editingIndex = -1;
   revokeDraftUrl();
+  byId("adjustment-mode").hidden = true;
+  document.body.classList.remove("adjustment-mode");
   setSheet(false);
+}
+
+function enterAdjustmentMode() {
+  if (!draftConfig) return;
+  if (editingIndex < 0 && !draftImage) {
+    showToast("画像を選んでください");
+    return;
+  }
+  setSheet(false);
+  byId("adjustment-mode").hidden = false;
+  document.body.classList.add("adjustment-mode");
+  syncEditorUI();
 }
 
 function setSheet(open) {
@@ -698,10 +714,10 @@ function syncEditorStatus() {
   if (!draftConfig) return;
   const ready = editingIndex >= 0 || Boolean(draftImage);
   let message = "画像を選んでください";
-  if (ready && draftConfig.point === "bg") message = "背景・フレームとして画面に固定します";
+  if (ready && draftConfig.point === "bg") message = "「位置を調整」で全画面表示します";
   if (ready && draftConfig.point === "face") {
     message = faces.length
-      ? `顔を${Math.min(faces.length, 5)}人検出中・プレビューで調整できます`
+      ? `顔を${Math.min(faces.length, 5)}人検出中・「位置を調整」で全画面表示します`
       : "顔を画面中央に映してください";
   }
   const status = byId("face-edit-status");
@@ -795,6 +811,8 @@ async function saveEffect() {
   draftConfig = null;
   draftImage = null;
   editingIndex = -1;
+  byId("adjustment-mode").hidden = true;
+  document.body.classList.remove("adjustment-mode");
   setSheet(false);
   createIconList();
   showToast("保存しました");

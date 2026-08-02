@@ -11,10 +11,10 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260731-no-close">
+  <link rel="stylesheet" href="style.css?v=20260802-effect-editor-ui">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260802-landscape-stability"></script>
+  <script defer src="sketch.js?v=20260802-effect-editor-ui"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -41,6 +41,7 @@
 
     <nav class="effects-dock" aria-label="エフェクト">
       <button id="open-settings-btn" class="effect-add" type="button" aria-label="画像を追加">＋</button>
+      <button id="edit-selected-btn" class="effect-edit" type="button" aria-label="選択中のエフェクトを編集" hidden>編集</button>
       <div id="icon-list" role="list"></div>
     </nav>
 
@@ -52,17 +53,37 @@
         <button id="close-panel-btn" class="text-btn" type="button">閉じる</button>
       </div>
       <div id="upload-section">
-        <label class="file-button" for="file-input">画像を選ぶ</label>
+        <p class="step-label"><span>1</span>画像を選ぶ</p>
+        <label class="file-button" for="file-input">端末から画像を選ぶ</label>
         <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp">
       </div>
-      <fieldset class="placement-field">
-        <legend>表示位置</legend>
-        <div class="segmented">
-          <button class="part-btn active" data-point="face" type="button">顔</button>
-          <button class="part-btn" data-point="bg" type="button">背景</button>
+      <div id="effect-edit-controls">
+        <fieldset class="placement-field">
+          <legend><span class="step-number">2</span>表示方法</legend>
+          <div class="segmented">
+            <button class="part-btn active" data-point="face" type="button">顔に追従</button>
+            <button class="part-btn" data-point="bg" type="button">画面に固定</button>
+          </div>
+        </fieldset>
+        <p id="face-edit-status" class="edit-status" role="status">画像を選んでください</p>
+        <div class="adjustment-section">
+          <p class="step-label"><span>3</span>位置と大きさを調整</p>
+          <div class="nudge-grid" aria-label="位置を微調整">
+            <button class="adjust-btn nudge-up" data-adjust="up" type="button" aria-label="上へ移動">↑</button>
+            <button class="adjust-btn nudge-left" data-adjust="left" type="button" aria-label="左へ移動">←</button>
+            <button id="reset-effect-btn" class="adjust-btn reset-adjust" type="button">リセット</button>
+            <button class="adjust-btn nudge-right" data-adjust="right" type="button" aria-label="右へ移動">→</button>
+            <button class="adjust-btn nudge-down" data-adjust="down" type="button" aria-label="下へ移動">↓</button>
+          </div>
+          <div class="scale-controls" aria-label="大きさを調整">
+            <span>大きさ</span>
+            <button class="adjust-btn" data-scale="down" type="button" aria-label="小さくする">−</button>
+            <output id="effect-scale-value">100%</output>
+            <button class="adjust-btn" data-scale="up" type="button" aria-label="大きくする">＋</button>
+          </div>
         </div>
-      </fieldset>
-      <p class="gesture-hint">プレビュー上で移動、2本指で拡大・縮小</p>
+        <p class="gesture-hint">プレビューをドラッグして移動、2本指で拡大・縮小もできます</p>
+      </div>
       <div class="sheet-actions">
         <button id="delete-btn" class="danger-btn" type="button" hidden>削除</button>
         <button id="cancel-edit-btn" class="secondary-btn" type="button">キャンセル</button>

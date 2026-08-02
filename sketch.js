@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-landscape-stability";
+const APP_BUILD = "20260802-effect-editor-ui";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -361,6 +361,7 @@ function beginFaceDetection() {
         const uniqueFaces = dedupeFaces(Array.isArray(results) ? results.slice(0, 5) : []);
         faces = stabilizeFaces(uniqueFaces, faces);
         inspectFaceCoordinateSpace(faces);
+        if (!byId("settings-panel").hidden) syncEditorStatus();
         if (faces.length) {
           const status = byId("status-pill");
           status.textContent = "準備完了";
@@ -514,6 +515,9 @@ function bindUI() {
     await startCamera(isFrontCamera ? "user" : "environment");
   });
   byId("open-settings-btn").addEventListener("click", openAddSheet);
+  byId("edit-selected-btn").addEventListener("click", () => {
+    if (currentIndex > 0 && assetList[currentIndex]?.custom) openEditSheet(currentIndex);
+  });
   byId("close-panel-btn").addEventListener("click", cancelSheet);
   byId("cancel-edit-btn").addEventListener("click", cancelSheet);
   byId("sheet-backdrop").addEventListener("click", cancelSheet);
@@ -532,8 +536,16 @@ function bindUI() {
       if (!draftConfig) return;
       draftConfig.point = button.dataset.point;
       syncPlacementButtons();
+      syncEditorUI();
     });
   });
+  document.querySelectorAll("[data-adjust]").forEach((button) => {
+    button.addEventListener("click", () => nudgeDraftEffect(button.dataset.adjust));
+  });
+  document.querySelectorAll("[data-scale]").forEach((button) => {
+    button.addEventListener("click", () => scaleDraftEffect(button.dataset.scale));
+  });
+  byId("reset-effect-btn").addEventListener("click", resetDraftEffect);
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
@@ -600,6 +612,8 @@ function createIconList() {
     button.addEventListener("pointermove", cancelLongPress);
     list.appendChild(button);
   });
+  const selected = assetList[currentIndex];
+  byId("edit-selected-btn").hidden = !selected?.custom;
 }
 
 function selectEffect(index) {
@@ -628,6 +642,7 @@ function openAddSheet() {
   byId("file-input").value = "";
   syncPlacementButtons();
   setSheet(true);
+  syncEditorUI();
 }
 
 function openEditSheet(index) {
@@ -642,9 +657,11 @@ function openEditSheet(index) {
   byId("save-effect-btn").textContent = "保存";
   syncPlacementButtons();
   setSheet(true);
+  syncEditorUI();
 }
 
 function cancelSheet() {
+  if (editingIndex < 0 && draftConfig?.custom) void idbDelete(draftConfig.id).catch(() => {});
   draftConfig = null;
   draftImage = null;
   editingIndex = -1;
@@ -664,6 +681,58 @@ function syncPlacementButtons() {
   });
 }
 
+function syncEditorUI() {
+  if (!draftConfig) return;
+  const ready = editingIndex >= 0 || Boolean(draftImage);
+  const controls = byId("effect-edit-controls");
+  controls.classList.toggle("is-disabled", !ready);
+  controls.querySelectorAll("button").forEach((button) => {
+    button.disabled = !ready;
+  });
+  byId("save-effect-btn").disabled = !ready;
+  byId("effect-scale-value").textContent = `${draftConfig.scale.toFixed(2)}×`;
+
+  syncEditorStatus();
+}
+
+function syncEditorStatus() {
+  if (!draftConfig) return;
+  const ready = editingIndex >= 0 || Boolean(draftImage);
+  let message = "画像を選んでください";
+  if (ready && draftConfig.point === "bg") message = "画面に固定して表示します";
+  if (ready && draftConfig.point === "face") {
+    message = faces.length
+      ? `顔を${Math.min(faces.length, 5)}人検出中・プレビューで調整できます`
+      : "顔を画面中央に映してください";
+  }
+  const status = byId("face-edit-status");
+  if (status.textContent !== message) status.textContent = message;
+}
+
+function nudgeDraftEffect(direction) {
+  if (!draftConfig || (!draftImage && editingIndex < 0)) return;
+  const step = 4;
+  if (direction === "left") draftConfig.xOff -= step;
+  if (direction === "right") draftConfig.xOff += step;
+  if (direction === "up") draftConfig.yOff -= step;
+  if (direction === "down") draftConfig.yOff += step;
+}
+
+function scaleDraftEffect(direction) {
+  if (!draftConfig || (!draftImage && editingIndex < 0)) return;
+  const delta = direction === "up" ? .1 : -.1;
+  draftConfig.scale = clamp(draftConfig.scale + delta, .2, 6);
+  syncEditorUI();
+}
+
+function resetDraftEffect() {
+  if (!draftConfig || (!draftImage && editingIndex < 0)) return;
+  draftConfig.xOff = 0;
+  draftConfig.yOff = 0;
+  draftConfig.scale = draftConfig.point === "face" ? 2.4 : 1;
+  syncEditorUI();
+}
+
 async function handleImageUpload(event) {
   const file = event.target.files?.[0];
   if (!file || !draftConfig) return;
@@ -679,6 +748,7 @@ async function handleImageUpload(event) {
     revokeDraftUrl();
     draftObjectUrl = optimized.url;
     showToast("画像を読み込みました");
+    syncEditorUI();
   } catch {
     showToast("画像を読み込めませんでした");
   }
@@ -871,6 +941,7 @@ function bindCanvasGestures(canvas) {
     if (activePointers.size >= 2 && pinchOrigin) {
       const [a, b] = [...activePointers.values()];
       draftConfig.scale = clamp(pinchOrigin.scale * pointDistance(a, b) / Math.max(1, pinchOrigin.distance), .2, 6);
+      syncEditorUI();
     } else if (previous) {
       const offsetScale = getDraftOffsetScale();
       draftConfig.xOff += (event.clientX - previous.x) / offsetScale;

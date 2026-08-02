@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ipad-xy40";
+const APP_BUILD = "20260802-ipad-x40-y0";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -189,7 +189,7 @@ function inspectFaceCoordinateSpace(results) {
           height: inputHeight,
           rotation: "none",
           xInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 4) : 0,
-          yInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 4) : 0,
+          yInset: 0,
           name: IS_IPAD ? "iPad landscape center-crop" : "video.width/video.height"
         };
   } else {

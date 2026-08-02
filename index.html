@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="style.css?v=20260802-effect-editor-ui">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260802-effect-editor-ui"></script>
+  <script defer src="sketch.js?v=20260802-effect-labels"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -61,8 +61,8 @@
         <fieldset class="placement-field">
           <legend><span class="step-number">2</span>表示方法</legend>
           <div class="segmented">
-            <button class="part-btn active" data-point="face" type="button">顔に追従</button>
-            <button class="part-btn" data-point="bg" type="button">画面に固定</button>
+            <button class="part-btn active" data-point="face" type="button">顔</button>
+            <button class="part-btn" data-point="bg" type="button">背景・フレーム</button>
           </div>
         </fieldset>
         <p id="face-edit-status" class="edit-status" role="status">画像を選んでください</p>

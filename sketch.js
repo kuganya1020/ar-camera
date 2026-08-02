@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-effect-editor-ui";
+const APP_BUILD = "20260802-effect-labels";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -699,7 +699,7 @@ function syncEditorStatus() {
   if (!draftConfig) return;
   const ready = editingIndex >= 0 || Boolean(draftImage);
   let message = "画像を選んでください";
-  if (ready && draftConfig.point === "bg") message = "画面に固定して表示します";
+  if (ready && draftConfig.point === "bg") message = "背景・フレームとして画面に固定します";
   if (ready && draftConfig.point === "face") {
     message = faces.length
       ? `顔を${Math.min(faces.length, 5)}人検出中・プレビューで調整できます`

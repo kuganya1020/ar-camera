@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-ipad-x-fix";
+const APP_BUILD = "20260802-face-smoothing";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -342,7 +342,8 @@ function beginFaceDetection() {
     faceMesh.detectStart(video, (results) => {
       if (session === detectionSession && cameraReady && !document.hidden) {
         lastFaceResultAt = performance.now();
-        faces = dedupeFaces(Array.isArray(results) ? results.slice(0, 5) : []);
+        const uniqueFaces = dedupeFaces(Array.isArray(results) ? results.slice(0, 5) : []);
+        faces = stabilizeFaces(uniqueFaces, faces);
         inspectFaceCoordinateSpace(faces);
         if (faces.length) {
           const status = byId("status-pill");
@@ -375,6 +376,49 @@ function dedupeFaces(results) {
     if (!duplicate) unique.push(face);
   }
   return unique.slice(0, 5);
+}
+
+function stabilizeFaces(results, previousFaces) {
+  const usedPrevious = new Set();
+  return results.map((face) => {
+    const nose = face.keypoints[1];
+    const left = face.keypoints[234];
+    const right = face.keypoints[454];
+    const faceWidth = Math.max(1, pointDistance(left, right));
+    let matchIndex = -1;
+    let matchDistance = Infinity;
+
+    previousFaces.forEach((previous, index) => {
+      if (usedPrevious.has(index) || !previous?.keypoints?.[1]) return;
+      const distance = pointDistance(nose, previous.keypoints[1]);
+      if (distance < matchDistance && distance < faceWidth * .8) {
+        matchIndex = index;
+        matchDistance = distance;
+      }
+    });
+
+    if (matchIndex < 0) return face;
+    usedPrevious.add(matchIndex);
+    const previous = previousFaces[matchIndex];
+    const stabilized = { ...face, keypoints: face.keypoints.slice() };
+
+    for (const index of [1, 234, 454]) {
+      const currentPoint = face.keypoints[index];
+      const previousPoint = previous.keypoints[index];
+      if (!currentPoint || !previousPoint) continue;
+      const movementRatio = pointDistance(currentPoint, previousPoint) / faceWidth;
+      const alpha = clamp(.2 + movementRatio * 3, .2, .85);
+      stabilized.keypoints[index] = {
+        ...currentPoint,
+        x: previousPoint.x + (currentPoint.x - previousPoint.x) * alpha,
+        y: previousPoint.y + (currentPoint.y - previousPoint.y) * alpha,
+        z: Number.isFinite(currentPoint.z) && Number.isFinite(previousPoint.z)
+          ? previousPoint.z + (currentPoint.z - previousPoint.z) * alpha
+          : currentPoint.z
+      };
+    }
+    return stabilized;
+  });
 }
 
 function checkFaceDetectionHealth() {

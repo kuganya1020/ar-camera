@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-fullscreen-gestures";
+const APP_BUILD = "20260802-ui-polish";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -525,6 +525,7 @@ function bindUI() {
   byId("save-effect-btn").addEventListener("click", enterAdjustmentMode);
   byId("adjustment-cancel-btn").addEventListener("click", cancelSheet);
   byId("adjustment-save-btn").addEventListener("click", saveEffect);
+  byId("fine-adjust-toggle").addEventListener("click", toggleFineAdjustControls);
   byId("delete-btn").addEventListener("click", () => setModal("delete-dialog", true));
   byId("delete-cancel-btn").addEventListener("click", () => setModal("delete-dialog", false));
   byId("delete-confirm-btn").addEventListener("click", deleteEffect);
@@ -620,6 +621,15 @@ function createIconList() {
 
 function selectEffect(index) {
   if (index < 0 || index >= assetList.length) index = 0;
+  if (
+    index === currentIndex &&
+    assetList[index]?.custom &&
+    byId("settings-panel").hidden &&
+    byId("adjustment-mode").hidden
+  ) {
+    openEditSheet(index);
+    return;
+  }
   currentIndex = index;
   draftConfig = null;
   draftImage = null;
@@ -680,9 +690,18 @@ function enterAdjustmentMode() {
     return;
   }
   setSheet(false);
+  byId("fine-adjust-controls").hidden = true;
+  byId("fine-adjust-toggle").setAttribute("aria-expanded", "false");
   byId("adjustment-mode").hidden = false;
   document.body.classList.add("adjustment-mode");
   syncEditorUI();
+}
+
+function toggleFineAdjustControls() {
+  const controls = byId("fine-adjust-controls");
+  const opening = controls.hidden;
+  controls.hidden = !opening;
+  byId("fine-adjust-toggle").setAttribute("aria-expanded", String(opening));
 }
 
 function setSheet(open) {
@@ -800,6 +819,7 @@ async function saveEffect() {
     showToast("画像を選んでください");
     return;
   }
+  const wasEditing = editingIndex >= 0;
   draftConfig.scale = clamp(draftConfig.scale, .2, 6);
   if (editingIndex >= 0) {
     assetList[editingIndex] = { ...draftConfig };
@@ -816,7 +836,7 @@ async function saveEffect() {
   document.body.classList.remove("adjustment-mode");
   setSheet(false);
   createIconList();
-  showToast("保存しました");
+  showToast(wasEditing ? "変更を保存しました" : "エフェクトを追加しました");
 }
 
 async function deleteEffect() {

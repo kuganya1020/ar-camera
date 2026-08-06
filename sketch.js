@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260802-background-width-fit";
+const APP_BUILD = "20260806-device-choice";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [
@@ -19,6 +19,9 @@ const MAX_UPLOAD_EDGE = 1280;
 const MAX_UPLOAD_PIXELS = 1600000;
 const FACE_OFFSET_REFERENCE_WIDTH = 100;
 const DEBUG_FACE_MESH = new URLSearchParams(location.search).get("debug") === "1";
+const PLATFORM_KEY = "arCameraPlatformV1";
+const SAVED_PLATFORM = readSavedPlatform();
+const AUTO_PLATFORM = /Android/i.test(navigator.userAgent) ? "android" : "ios";
 const DEVICE_MEMORY_GB = Number(navigator.deviceMemory) || 0;
 const CPU_CORES = Number(navigator.hardwareConcurrency) || 0;
 const IS_LOW_MEMORY_DEVICE = (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4) ||
@@ -66,10 +69,13 @@ let nextFaceTrackId = 1;
 const facePlacementStates = new Map();
 
 function preload() {
-  faceMesh = ml5.faceMesh({
-    maxFaces: 5,
-    flipHorizontal: false
-  });
+  // 初回は端末選択を先に表示する。選択後の再読み込みでモデルを確実に準備する。
+  if (SAVED_PLATFORM) {
+    faceMesh = ml5.faceMesh({
+      maxFaces: 5,
+      flipHorizontal: false
+    });
+  }
 
   for (const asset of DEFAULT_ASSETS) {
     if (asset.fileName) {
@@ -84,9 +90,11 @@ function setup() {
   modelReady = Boolean(faceMesh?.detectStart);
   modelLoading = false;
 
-  const density = IS_LOW_MEMORY_DEVICE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+  const androidMode = SAVED_PLATFORM === "android";
+  const useLightRendering = androidMode || IS_LOW_MEMORY_DEVICE;
+  const density = useLightRendering ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   pixelDensity(density);
-  frameRate(IS_LOW_MEMORY_DEVICE ? 24 : 30);
+  frameRate(useLightRendering ? 24 : 30);
 
   const initialViewport = getViewportSize();
   const canvas = createCanvas(initialViewport.width, initialViewport.height);
@@ -105,7 +113,12 @@ function setup() {
   detectionWatchdogTimer = window.setInterval(checkFaceDetectionHealth, 750);
   loadStoredAssets().finally(() => {
     createIconList();
-    startCamera("user");
+    if (SAVED_PLATFORM) {
+      startCamera("user");
+    } else {
+      hideLoaderImmediately();
+      openPlatformSelector(false);
+    }
   });
 }
 
@@ -584,6 +597,14 @@ function bindUI() {
     setModal("tutorial-overlay", false);
     safeStorageSet("arCameraTutorialSeen", "1");
   });
+  byId("change-platform-btn").addEventListener("click", () => {
+    setModal("tutorial-overlay", false);
+    openPlatformSelector(true);
+  });
+  byId("platform-cancel-btn").addEventListener("click", () => setModal("platform-overlay", false));
+  document.querySelectorAll("[data-platform]").forEach((button) => {
+    button.addEventListener("click", () => selectPlatform(button.dataset.platform));
+  });
   document.querySelectorAll(".part-btn").forEach((button) => {
     button.addEventListener("click", () => {
       if (!draftConfig) return;
@@ -623,9 +644,39 @@ function bindUI() {
   window.addEventListener("pagehide", cleanup);
   window.addEventListener("beforeunload", cleanup);
 
-  if (!safeStorageGet("arCameraTutorialSeen")) {
+  if (SAVED_PLATFORM && !safeStorageGet("arCameraTutorialSeen")) {
     window.setTimeout(() => setModal("tutorial-overlay", true), 400);
   }
+}
+
+function readSavedPlatform() {
+  try {
+    const value = localStorage.getItem("arCameraPlatformV1");
+    return value === "ios" || value === "android" ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function openPlatformSelector(canCancel) {
+  document.querySelectorAll("[data-platform]").forEach((button) => {
+    button.dataset.recommended = String(button.dataset.platform === AUTO_PLATFORM);
+  });
+  byId("platform-cancel-btn").hidden = !canCancel;
+  setModal("platform-overlay", true);
+}
+
+function selectPlatform(platform) {
+  if (platform !== "ios" && platform !== "android") return;
+  if (!safeStorageSet(PLATFORM_KEY, platform)) return;
+  showLoader("端末設定を反映中");
+  location.reload();
+}
+
+function hideLoaderImmediately() {
+  const loader = byId("loading-screen");
+  loader.style.opacity = "0";
+  loader.hidden = true;
 }
 
 function switchMode(mode) {

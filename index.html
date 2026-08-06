@@ -11,10 +11,10 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260802-switch-icon-final">
+  <link rel="stylesheet" href="style.css?v=20260806-device-choice">
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260802-background-width-fit"></script>
+  <script defer src="sketch.js?v=20260806-device-choice"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -118,7 +118,27 @@
           <li>中央のボタンで写真・動画を保存します。</li>
         </ol>
         <p>追加画像は、全画面の調整モードで位置と大きさを変更できます。</p>
+        <button id="change-platform-btn" class="secondary-btn device-settings-btn" type="button">端末設定を変更</button>
         <button id="tutorial-close-btn" class="primary-btn" type="button">わかりました</button>
+      </div>
+    </section>
+
+    <section id="platform-overlay" class="modal-layer platform-layer" role="dialog" aria-modal="true" aria-labelledby="platform-title" hidden>
+      <div class="plain-modal platform-modal">
+        <h2 id="platform-title">お使いの端末を選択</h2>
+        <p>カメラと顔エフェクトを端末に合わせて調整します。</p>
+        <div class="platform-options" role="group" aria-label="端末の種類">
+          <button class="platform-choice" type="button" data-platform="ios">
+            <strong>iPhone・iPad</strong>
+            <span>iOS・iPadOSはこちら</span>
+          </button>
+          <button class="platform-choice" type="button" data-platform="android">
+            <strong>Android</strong>
+            <span>Androidスマートフォン・タブレットはこちら</span>
+          </button>
+        </div>
+        <p class="platform-note">この設定は、使い方画面からあとで変更できます。</p>
+        <button id="platform-cancel-btn" class="text-btn platform-cancel" type="button" hidden>キャンセル</button>
       </div>
     </section>
 

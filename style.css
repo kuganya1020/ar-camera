@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   --accent: #ffd6ea;
-  --panel: #dbffff(16, 16, 16, 0.94);
+  --panel: rgba(16, 16, 16, 0.94);
   --line: rgba(255, 255, 255, 0.18);
   --muted: rgba(255, 255, 255, 0.7);
   --top-safe: env(safe-area-inset-top, 0px);
@@ -600,11 +600,13 @@ body.adjustment-mode .effects-dock {
   cursor: pointer;
 }
 .platform-choice:active { transform: scale(.98); }
+.platform-choice[data-selected="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.platform-choice[data-selected="true"] strong { color: var(--accent); }
 .platform-choice strong { font-size: 16px; }
 .platform-choice span { color: var(--muted); font-size: 12px; }
-.platform-choice[data-recommended="true"] {
-  border-color: var(--line);
-}
 .platform-choice[data-recommended="true"]::after {
   content: "この端末におすすめ";
   grid-column: 2;
@@ -647,6 +649,7 @@ body.adjustment-mode .effects-dock {
   transition: opacity .2s ease;
 }
 #loading-screen p { margin: 0; color: var(--muted); font-size: 13px; }
+.loading-retry-btn { margin-top: 4px; min-width: 132px; }
 .spinner {
   width: 10px;
   height: 10px;

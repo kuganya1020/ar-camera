@@ -1,8 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260806-device-choice-neutral";
-const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
-  (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+const APP_BUILD = "20260806-stage10-polish";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -24,8 +22,13 @@ const SAVED_PLATFORM = readSavedPlatform();
 const AUTO_PLATFORM = /Android/i.test(navigator.userAgent) ? "android" : "ios";
 const DEVICE_MEMORY_GB = Number(navigator.deviceMemory) || 0;
 const CPU_CORES = Number(navigator.hardwareConcurrency) || 0;
-const IS_LOW_MEMORY_DEVICE = (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4) ||
-  (CPU_CORES > 0 && CPU_CORES <= 4);
+// OSの種類と端末性能は別物として扱う。Androidを選んだだけでは軽量化しない。
+// 非常に少ないメモリ/CPU、または両方が控えめな端末だけを軽量モードにする。
+const IS_LOW_SPEC_DEVICE =
+  (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 2) ||
+  (CPU_CORES > 0 && CPU_CORES <= 2) ||
+  (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4 &&
+    CPU_CORES > 0 && CPU_CORES <= 4);
 
 let faceMesh;
 let video;
@@ -34,6 +37,7 @@ let currentDeviceId = "";
 let faces = [];
 let assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset }));
 let images = new Map();
+const assetPreviewUrls = new Map();
 let currentIndex = 1;
 let currentMode = "photo";
 let isFrontCamera = true;
@@ -43,6 +47,7 @@ let recordedChunks = [];
 let recordingStream;
 let timerInterval;
 let recordingStartedAt = 0;
+let recordingFailed = false;
 let detectionSession = 0;
 let faceDetectionActive = false;
 let lastFaceResultAt = 0;
@@ -51,6 +56,8 @@ let detectionRestarting = false;
 let modelReady = false;
 let modelLoading = false;
 let cameraReady = false;
+let cameraStartGeneration = 0;
+let cameraSwitchInProgress = false;
 let faceCoordinateSpace = null;
 let observedFaceRange = null;
 let editingIndex = -1;
@@ -58,25 +65,18 @@ let draftConfig = null;
 let draftImage = null;
 let draftObjectUrl = "";
 let toastTimer;
+let loaderHideTimer;
 let longPressTimer;
 let dbPromise;
 const activePointers = new Map();
-let dragOrigin = null;
 let pinchOrigin = null;
+const modalFocusOrigins = new Map();
 let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
 let nextFaceTrackId = 1;
 const facePlacementStates = new Map();
 
 function preload() {
-  // 初回は端末選択を先に表示する。選択後の再読み込みでモデルを確実に準備する。
-  if (SAVED_PLATFORM) {
-    faceMesh = ml5.faceMesh({
-      maxFaces: 5,
-      flipHorizontal: false
-    });
-  }
-
   for (const asset of DEFAULT_ASSETS) {
     if (asset.fileName) {
       images.set(asset.id, loadImage(asset.fileName, undefined, () => {
@@ -87,11 +87,10 @@ function preload() {
 }
 
 function setup() {
-  modelReady = Boolean(faceMesh?.detectStart);
+  modelReady = false;
   modelLoading = false;
 
-  const androidMode = SAVED_PLATFORM === "android";
-  const useLightRendering = androidMode || IS_LOW_MEMORY_DEVICE;
+  const useLightRendering = IS_LOW_SPEC_DEVICE;
   const density = useLightRendering ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   pixelDensity(density);
   frameRate(useLightRendering ? 24 : 30);
@@ -150,8 +149,8 @@ function draw() {
     imageMode(CENTER);
     image(
       stamp,
-      width / 2 + numberOrZero(config.xOff),
-      height / 2 + numberOrZero(config.yOff),
+      width / 2 + numberOrZero(config.xOff) * (width / 480),
+      height / 2 + numberOrZero(config.yOff) * (width / 480),
       stamp.width * backgroundScale,
       stamp.height * backgroundScale
     );
@@ -207,30 +206,32 @@ function inspectFaceCoordinateSpace(results) {
   // ランドマークが左上方向へ圧縮されるため、ここでは混在させない。
   const inputWidth = video?.width || video?.elt?.videoWidth || 0;
   const inputHeight = video?.height || video?.elt?.videoHeight || 0;
+  faceCoordinateSpace = resolveFaceCoordinateSpace(maxX, maxY, inputWidth, inputHeight);
+}
+
+function resolveFaceCoordinateSpace(maxX, maxY, inputWidth, inputHeight) {
   if (maxX <= 1.5 && maxY <= 1.5) {
-    faceCoordinateSpace = { width: 1, height: 1, rotation: "none", xInset: 0, yInset: 0, name: "normalized 0-1" };
-  } else if (inputWidth > 0 && inputHeight > 0) {
-    const portraitSensorCoordinates = inputHeight > inputWidth;
-    faceCoordinateSpace = portraitSensorCoordinates
-      ? {
-          width: inputHeight,
-          height: inputWidth,
-          rotation: "clockwise",
-          xInset: 0,
-          yInset: 0,
-          name: "landscape sensor -> portrait CW"
-        }
-      : {
-          width: inputWidth,
-          height: inputHeight,
-          rotation: "none",
-          xInset: IS_IPAD ? Math.max(0, (inputWidth - inputHeight) / 4) : 0,
-          yInset: 0,
-          name: IS_IPAD ? "iPad landscape center-crop" : "video.width/video.height"
-        };
-  } else {
-    faceCoordinateSpace = null;
+    return { width: 1, height: 1, rotation: "none", name: "normalized 0-1" };
   }
+  if (!(inputWidth > 0 && inputHeight > 0)) return null;
+
+  // iPhone/iPad/Androidという端末名では補正しない。
+  // FaceMeshへ渡したvideoの座標基準だけから変換を決め、Canvas側の中央クロップは
+  // getCameraFrame()のframe.x/frame.y/frame.scaleで一度だけ適用する。
+  if (inputHeight > inputWidth) {
+    return {
+      width: inputHeight,
+      height: inputWidth,
+      rotation: "clockwise",
+      name: "landscape sensor -> portrait CW"
+    };
+  }
+  return {
+    width: inputWidth,
+    height: inputHeight,
+    rotation: "none",
+    name: "video.width/video.height"
+  };
 }
 
 function facePointToCanvas(point, frame) {
@@ -244,9 +245,6 @@ function facePointToCanvas(point, frame) {
     sourceY = point.x;
     sourceWidth = faceCoordinateSpace.height;
     sourceHeight = faceCoordinateSpace.width;
-  } else {
-    sourceX -= faceCoordinateSpace.xInset || 0;
-    sourceY -= faceCoordinateSpace.yInset || 0;
   }
   const rawX = frame.x + sourceX * (frame.width / sourceWidth);
   // 前面カメラ映像はdraw()内で1回だけ反転しているため、
@@ -371,7 +369,7 @@ function drawFaceMeshDebug(frame) {
   const activeConfig = draftConfig || assetList[currentIndex];
   text([
     `build: ${APP_BUILD}`,
-    `FaceMesh基準: ${basis}  xInset=${faceCoordinateSpace?.xInset || 0} yInset=${faceCoordinateSpace?.yInset || 0}`,
+    `FaceMesh基準: ${basis}`,
     `観測 max(x,y): ${range}`,
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
     `表示: ${frame.width.toFixed(1)} x ${frame.height.toFixed(1)}  scale=${frame.scale.toFixed(4)}`,
@@ -384,7 +382,9 @@ function drawFaceMeshDebug(frame) {
 }
 
 async function startCamera(facingMode) {
-  if (isRecording) return;
+  if (isRecording) return false;
+  const generation = ++cameraStartGeneration;
+  setCameraSwitchBusy(true);
   cameraReady = false;
   faces = [];
   faceCoordinateSpace = null;
@@ -395,38 +395,109 @@ async function startCamera(facingMode) {
   stopCameraTracks();
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    showCameraError("このブラウザはカメラ撮影に対応していません");
-    return;
+    if (generation === cameraStartGeneration) {
+      showCameraError("このブラウザはカメラ撮影に対応していません");
+      setCameraSwitchBusy(false);
+    }
+    return false;
   }
 
   try {
     const videoConstraints = await getCameraConstraints(facingMode);
-    const startSession = detectionSession;
-    video = createCapture({ video: videoConstraints, audio: false }, async (stream) => {
-      if (startSession !== detectionSession || !video) {
+    if (generation !== cameraStartGeneration) return false;
+
+    let createdVideo;
+    createdVideo = createCapture({ video: videoConstraints, audio: false }, async (stream) => {
+      if (generation !== cameraStartGeneration || video !== createdVideo) {
         stream?.getTracks?.().forEach((track) => track.stop());
+        createdVideo?.remove?.();
         return;
       }
-      cameraStream = video.elt.srcObject || stream;
+      cameraStream = createdVideo.elt.srcObject || stream;
       const activeTrack = cameraStream?.getVideoTracks?.()[0];
       currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
-      try { await video.elt.play(); } catch {}
+      try { await createdVideo.elt.play(); } catch {}
+      if (generation !== cameraStartGeneration || video !== createdVideo) {
+        stream?.getTracks?.().forEach((track) => track.stop());
+        createdVideo?.remove?.();
+        return;
+      }
       cameraReady = true;
+      setCameraSwitchBusy(false);
       hideLoader();
-      setStatus(modelReady ? "顔を認識中" : "顔認識を開始できませんでした");
-      beginFaceDetection();
+      setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
+      if (modelReady) beginFaceDetection();
+      else initializeFaceMesh();
     });
-    video.hide();
-    video.elt.muted = true;
-    video.elt.autoplay = true;
-    video.elt.playsInline = true;
-    video.elt.setAttribute("playsinline", "");
-    video.elt.addEventListener("error", () => {
-      if (!cameraReady) showCameraError("カメラを開始できませんでした");
+    video = createdVideo;
+    createdVideo.hide();
+    createdVideo.elt.muted = true;
+    createdVideo.elt.autoplay = true;
+    createdVideo.elt.playsInline = true;
+    createdVideo.elt.setAttribute("playsinline", "");
+    createdVideo.elt.addEventListener("error", () => {
+      if (generation === cameraStartGeneration && !cameraReady) {
+        showCameraError("カメラを開始できませんでした");
+        setCameraSwitchBusy(false);
+      }
     }, { once: true });
+    return true;
   } catch (error) {
-    const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
-    showCameraError(denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした");
+    if (generation === cameraStartGeneration) {
+      const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
+      showCameraError(denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした");
+      setCameraSwitchBusy(false);
+    }
+    return false;
+  }
+}
+
+function setCameraSwitchBusy(busy) {
+  cameraSwitchInProgress = busy;
+  const button = byId("switch-camera-btn");
+  if (!button) return;
+  button.disabled = busy;
+  button.setAttribute("aria-busy", String(busy));
+}
+
+function initializeFaceMesh() {
+  if (modelLoading || modelReady) return;
+  modelLoading = true;
+
+  const finishLoading = (loadedModel) => {
+    if (loadedModel?.detectStart) faceMesh = loadedModel;
+    if (modelReady) return;
+    if (!faceMesh?.detectStart) {
+      failLoading(new Error("FaceMesh model is unavailable"));
+      return;
+    }
+    modelReady = true;
+    modelLoading = false;
+    setStatus("顔を認識中");
+    if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
+  };
+
+  const failLoading = (error) => {
+    modelLoading = false;
+    modelReady = false;
+    faceMesh = null;
+    console.error("FaceMesh initialization failed", error);
+    showFaceMeshError("顔認識を読み込めませんでした");
+  };
+
+  try {
+    const createdModel = ml5.faceMesh({
+      maxFaces: 5,
+      flipHorizontal: false,
+      callback: finishLoading
+    });
+    if (createdModel?.then) {
+      createdModel.then(finishLoading).catch(failLoading);
+    } else {
+      faceMesh = createdModel;
+    }
+  } catch (error) {
+    failLoading(error);
   }
 }
 
@@ -566,6 +637,7 @@ function stopCameraTracks() {
 }
 
 function bindUI() {
+  byId("loading-retry-btn").addEventListener("click", retryCameraOrModel);
   byId("mode-photo").addEventListener("click", () => switchMode("photo"));
   byId("mode-video").addEventListener("click", () => switchMode("video"));
   byId("main-shutter-btn").addEventListener("click", () => {
@@ -574,6 +646,7 @@ function bindUI() {
   });
   byId("switch-camera-btn").addEventListener("click", async () => {
     if (isRecording) return showToast("録画を停止してから切り替えてください");
+    if (cameraSwitchInProgress) return;
     isFrontCamera = !isFrontCamera;
     await startCamera(isFrontCamera ? "user" : "environment");
   });
@@ -627,12 +700,17 @@ function bindUI() {
         stopRecording();
         showToast("画面が閉じられたため録画を停止しました");
       }
-      faces = [];
+      stopFaceDetection();
+      faceCoordinateSpace = null;
+      observedFaceRange = null;
+    } else if (cameraReady && video && modelReady) {
+      beginFaceDetection();
     }
   });
   window.addEventListener("orientationchange", () => {
     // 回転前後ではFaceMeshの座標基準が変わるため、古い平滑化座標を混ぜない。
     faces = [];
+    facePlacementStates.clear();
     faceCoordinateSpace = null;
     observedFaceRange = null;
     scheduleCanvasResize();
@@ -652,15 +730,17 @@ function bindUI() {
 function readSavedPlatform() {
   try {
     const value = localStorage.getItem("arCameraPlatformV1");
-    return value === "ios" || value === "android" ? value : "";
-  } catch {
-    return "";
-  }
+    if (value === "ios" || value === "android") return value;
+  } catch {}
+  const requested = new URLSearchParams(location.search).get("platform");
+  return requested === "ios" || requested === "android" ? requested : "";
 }
 
 function openPlatformSelector(canCancel) {
   document.querySelectorAll("[data-platform]").forEach((button) => {
     button.dataset.recommended = String(button.dataset.platform === AUTO_PLATFORM);
+    button.dataset.selected = String(Boolean(SAVED_PLATFORM) && button.dataset.platform === SAVED_PLATFORM);
+    button.setAttribute("aria-pressed", button.dataset.selected);
   });
   byId("platform-cancel-btn").hidden = !canCancel;
   setModal("platform-overlay", true);
@@ -668,9 +748,22 @@ function openPlatformSelector(canCancel) {
 
 function selectPlatform(platform) {
   if (platform !== "ios" && platform !== "android") return;
-  if (!safeStorageSet(PLATFORM_KEY, platform)) return;
-  showLoader("端末設定を反映中");
-  location.reload();
+  if (!safeStorageSet(PLATFORM_KEY, platform)) {
+    const url = new URL(location.href);
+    url.searchParams.set("platform", platform);
+    location.href = url.href;
+    return;
+  }
+  document.querySelectorAll("[data-platform]").forEach((button) => {
+    const selected = button.dataset.platform === platform;
+    button.dataset.selected = String(selected);
+    button.setAttribute("aria-pressed", String(selected));
+    button.disabled = true;
+  });
+  window.setTimeout(() => {
+    showLoader("端末設定を反映中");
+    location.reload();
+  }, 160);
 }
 
 function hideLoaderImmediately() {
@@ -928,6 +1021,11 @@ async function saveEffect() {
     assetList.push({ ...draftConfig });
     currentIndex = assetList.length - 1;
     images.set(draftConfig.id, draftImage);
+    if (draftObjectUrl) {
+      revokeAssetPreviewUrl(draftConfig.id);
+      assetPreviewUrls.set(draftConfig.id, draftObjectUrl);
+      draftObjectUrl = "";
+    }
   }
   persistMetadata();
   draftConfig = null;
@@ -945,6 +1043,7 @@ async function deleteEffect() {
   const removed = assetList[editingIndex];
   assetList.splice(editingIndex, 1);
   images.delete(removed.id);
+  revokeAssetPreviewUrl(removed.id);
   if (removed.custom) await idbDelete(removed.id);
   currentIndex = clamp(currentIndex, 0, Math.max(0, assetList.length - 1));
   if (currentIndex >= editingIndex) currentIndex = Math.max(0, currentIndex - 1);
@@ -978,18 +1077,29 @@ function startRecording() {
   const canvas = document.querySelector("canvas");
   const mimeType = chooseRecordingMimeType();
   try {
-    recordingStream = canvas.captureStream(24);
-    mediaRecorder = new MediaRecorder(recordingStream, mimeType ? { mimeType, videoBitsPerSecond: 3500000 } : undefined);
+    const recordingFps = IS_LOW_SPEC_DEVICE ? 20 : 30;
+    const canvasPixels = canvas.width * canvas.height;
+    const videoBitsPerSecond = IS_LOW_SPEC_DEVICE
+      ? 1500000
+      : canvasPixels <= 1280 * 720 ? 2500000 : 4000000;
+    recordingStream = canvas.captureStream(recordingFps);
+    mediaRecorder = new MediaRecorder(recordingStream, {
+      ...(mimeType ? { mimeType } : {}),
+      videoBitsPerSecond
+    });
   } catch {
+    stopRecordingTracks();
+    mediaRecorder = null;
     showToast("動画録画を開始できませんでした");
     return;
   }
   recordedChunks = [];
+  recordingFailed = false;
   mediaRecorder.addEventListener("dataavailable", (event) => {
     if (event.data.size) recordedChunks.push(event.data);
   });
   mediaRecorder.addEventListener("stop", saveVideo, { once: true });
-  mediaRecorder.addEventListener("error", () => showToast("録画中にエラーが発生しました"), { once: true });
+  mediaRecorder.addEventListener("error", handleRecordingError, { once: true });
   mediaRecorder.start(1000);
   isRecording = true;
   recordingStartedAt = Date.now();
@@ -1007,7 +1117,23 @@ function stopRecording() {
   document.body.classList.remove("recording");
   byId("video-timer").textContent = "00:00";
   byId("main-shutter-btn").setAttribute("aria-label", "録画を開始する");
-  if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try { mediaRecorder.stop(); } catch { handleRecordingError(); }
+  } else {
+    stopRecordingTracks();
+  }
+}
+
+function handleRecordingError() {
+  recordingFailed = true;
+  isRecording = false;
+  window.clearInterval(timerInterval);
+  timerInterval = null;
+  document.body.classList.remove("recording");
+  byId("video-timer").textContent = "00:00";
+  byId("main-shutter-btn").setAttribute("aria-label", "録画を開始する");
+  stopRecordingTracks();
+  showToast("録画中にエラーが発生しました");
 }
 
 function updateTimer() {
@@ -1021,9 +1147,15 @@ async function saveVideo() {
   const blob = new Blob(recordedChunks, { type });
   const extension = type.includes("mp4") ? "mp4" : "webm";
   stopRecordingTracks();
+  if (recordingFailed) {
+    recordedChunks = [];
+    mediaRecorder = null;
+    return;
+  }
   if (!blob.size) return showToast("動画を保存できませんでした");
   await shareOrDownload(blob, `ar-video-${Date.now()}.${extension}`, type, "AR動画");
   recordedChunks = [];
+  mediaRecorder = null;
 }
 
 function chooseRecordingMimeType() {
@@ -1064,9 +1196,7 @@ function bindCanvasGestures(canvas) {
     if (!document.body.classList.contains("adjustment-mode") || !draftConfig) return;
     canvas.setPointerCapture(event.pointerId);
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (activePointers.size === 1) {
-      dragOrigin = { x: event.clientX, y: event.clientY };
-    } else if (activePointers.size === 2) {
+    if (activePointers.size === 2) {
       const [a, b] = [...activePointers.values()];
       pinchOrigin = { distance: pointDistance(a, b), scale: draftConfig.scale };
     }
@@ -1092,13 +1222,13 @@ function bindCanvasGestures(canvas) {
   const endPointer = (event) => {
     activePointers.delete(event.pointerId);
     if (activePointers.size < 2) pinchOrigin = null;
-    if (!activePointers.size) dragOrigin = null;
   };
   canvas.addEventListener("pointerup", endPointer);
   canvas.addEventListener("pointercancel", endPointer);
 }
 
 function getDraftOffsetScale() {
+  if (draftConfig?.point === "bg") return Math.max(.1, width / 480);
   if (draftConfig?.point !== "face" || !faces.length || !video || !cameraReady) return 1;
   const placement = resolveFacePlacement(faces[0], getCameraFrame());
   return placement ? Math.max(.1, placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH) : 1;
@@ -1121,6 +1251,11 @@ function syncCanvasToViewport() {
   const next = getViewportSize();
   if (width !== next.width || height !== next.height) {
     resizeCanvas(next.width, next.height);
+    // 異なるCanvasサイズで平滑化した座標を次の向きへ持ち越さない。
+    faces = [];
+    facePlacementStates.clear();
+    faceCoordinateSpace = null;
+    observedFaceRange = null;
   }
 }
 
@@ -1134,6 +1269,8 @@ function windowResized() {
 }
 
 function cleanup() {
+  cameraStartGeneration += 1;
+  setCameraSwitchBusy(false);
   if (isRecording) stopRecording();
   window.clearInterval(timerInterval);
   window.clearTimeout(toastTimer);
@@ -1149,6 +1286,7 @@ function cleanup() {
   stopFaceDetection();
   stopCameraTracks();
   revokeDraftUrl();
+  for (const id of assetPreviewUrls.keys()) revokeAssetPreviewUrl(id);
 }
 
 function stopRecordingTracks() {
@@ -1171,16 +1309,20 @@ async function loadStoredAssets() {
     assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }));
     await migrateLegacyAssets();
   }
-  for (const asset of assetList.filter((item) => item.custom)) {
+  const customAssets = assetList.filter((item) => item.custom);
+  await Promise.allSettled(customAssets.map(async (asset) => {
     const blob = await idbGet(asset.id);
-    if (!blob) continue;
+    if (!blob) return;
     const url = URL.createObjectURL(blob);
     try {
       images.set(asset.id, await loadP5Image(url));
-    } finally {
+      revokeAssetPreviewUrl(asset.id);
+      assetPreviewUrls.set(asset.id, url);
+    } catch (error) {
       URL.revokeObjectURL(url);
+      throw error;
     }
-  }
+  }));
 }
 
 async function migrateLegacyAssets() {
@@ -1224,8 +1366,13 @@ function getAssetImage(asset) {
 function getAssetPreviewUrl(asset) {
   if (!asset || asset.point === "none") return "";
   if (asset.fileName) return asset.fileName;
-  const image = images.get(asset.id);
-  return image?.canvas?.toDataURL?.("image/png") || image?.src || "";
+  return assetPreviewUrls.get(asset.id) || images.get(asset.id)?.src || "";
+}
+
+function revokeAssetPreviewUrl(id) {
+  const url = assetPreviewUrls.get(id);
+  if (url) URL.revokeObjectURL(url);
+  assetPreviewUrls.delete(id);
 }
 
 function openDb() {
@@ -1264,7 +1411,10 @@ function loadHtmlImage(url) {
       URL.revokeObjectURL(url);
       resolve(image);
     };
-    image.onerror = reject;
+    image.onerror = (error) => {
+      URL.revokeObjectURL(url);
+      reject(error);
+    };
     image.src = url;
   });
 }
@@ -1274,7 +1424,19 @@ function canvasToBlob(canvas, type, quality) {
 }
 
 function setModal(id, open) {
-  byId(id).hidden = !open;
+  const modal = byId(id);
+  if (open) {
+    modalFocusOrigins.set(id, document.activeElement);
+    modal.hidden = false;
+    requestAnimationFrame(() => {
+      modal.querySelector("button:not([hidden]):not([disabled]), input:not([hidden]):not([disabled])")?.focus();
+    });
+    return;
+  }
+  modal.hidden = true;
+  const origin = modalFocusOrigins.get(id);
+  modalFocusOrigins.delete(id);
+  if (origin?.isConnected) origin.focus();
 }
 
 function setStatus(message) {
@@ -1284,15 +1446,20 @@ function setStatus(message) {
 }
 
 function showLoader(message) {
-  byId("loading-screen").hidden = false;
-  byId("loading-screen").style.opacity = "1";
-  byId("loading-screen").querySelector("p").textContent = message;
+  window.clearTimeout(loaderHideTimer);
+  const loader = byId("loading-screen");
+  loader.hidden = false;
+  loader.style.opacity = "1";
+  loader.querySelector("p").textContent = message;
+  loader.querySelector(".spinner").hidden = false;
+  byId("loading-retry-btn").hidden = true;
 }
 
 function hideLoader() {
   const loader = byId("loading-screen");
+  window.clearTimeout(loaderHideTimer);
   loader.style.opacity = "0";
-  window.setTimeout(() => { loader.hidden = true; }, 220);
+  loaderHideTimer = window.setTimeout(() => { loader.hidden = true; }, 220);
 }
 
 function showCameraError(message) {
@@ -1300,12 +1467,31 @@ function showCameraError(message) {
   showLoader(message);
   const spinner = byId("loading-screen").querySelector(".spinner");
   spinner.hidden = true;
+  byId("loading-retry-btn").hidden = false;
   setStatus(message);
+}
+
+function showFaceMeshError(message) {
+  showLoader(message);
+  byId("loading-screen").querySelector(".spinner").hidden = true;
+  byId("loading-retry-btn").hidden = false;
+  setStatus(message);
+}
+
+function retryCameraOrModel() {
+  if (cameraSwitchInProgress || modelLoading) return;
+  if (!cameraReady || !video) {
+    startCamera(isFrontCamera ? "user" : "environment");
+    return;
+  }
+  showLoader("顔認識を準備中");
+  initializeFaceMesh();
 }
 
 function showToast(message) {
   const toast = byId("toast");
   window.clearTimeout(toastTimer);
+  window.clearTimeout(loaderHideTimer);
   toast.textContent = message;
   toast.hidden = false;
   toastTimer = window.setTimeout(() => { toast.hidden = true; }, 2400);

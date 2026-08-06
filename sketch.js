@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260806-device-choice";
+const APP_BUILD = "20260806-device-choice-neutral";
 const IS_IPAD = /iPad/i.test(navigator.userAgent) ||
   (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
 const DEFAULT_ASSETS = [

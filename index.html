@@ -8,13 +8,28 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="app_icon.png.optimized.png?v=20260802">
   <link rel="icon" type="image/png" href="app_icon.png.optimized.png?v=20260802">
+  <link rel="manifest" href="manifest.webmanifest?v=20260806">
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260806-device-selected-state">
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js"></script>
-  <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js"></script>
-  <script defer src="sketch.js?v=20260806-device-selected-state"></script>
+  <link rel="stylesheet" href="style.css?v=20260806-stage10-polish">
+  <script>
+    (() => {
+      let platform = "";
+      try {
+        const saved = localStorage.getItem("arCameraPlatformV1");
+        if (saved === "ios" || saved === "android") platform = saved;
+      } catch {}
+      if (!platform) {
+        const requested = new URLSearchParams(location.search).get("platform");
+        if (requested === "ios" || requested === "android") platform = requested;
+      }
+      window.AR_CAMERA_BOOT_PLATFORM = platform;
+    })();
+  </script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
+  <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
+  <script defer src="sketch.js?v=20261029-camera-ready-fix"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -157,7 +172,35 @@
     <div id="loading-screen" role="status" aria-live="polite">
       <div class="spinner" aria-hidden="true"></div>
       <p>カメラを準備中</p>
+      <button id="loading-retry-btn" class="secondary-btn loading-retry-btn" type="button" hidden>もう一度試す</button>
     </div>
   </main>
+  <script>
+    (() => {
+      const loader = document.getElementById("loading-screen");
+      const retry = document.getElementById("loading-retry-btn");
+      const overlay = document.getElementById("platform-overlay");
+      if (!window.AR_CAMERA_BOOT_PLATFORM) {
+        const recommended = /Android/i.test(navigator.userAgent) ? "android" : "ios";
+        loader.hidden = true;
+        overlay.hidden = false;
+        document.querySelectorAll("[data-platform]").forEach((button) => {
+          button.dataset.recommended = String(button.dataset.platform === recommended);
+          button.dataset.selected = "false";
+          button.setAttribute("aria-pressed", "false");
+        });
+      }
+      window.addEventListener("load", () => {
+        if (!window.AR_CAMERA_DEPENDENCY_ERROR) return;
+        overlay.hidden = true;
+        loader.hidden = false;
+        loader.style.opacity = "1";
+        loader.querySelector(".spinner").hidden = true;
+        loader.querySelector("p").textContent = "必要なデータを読み込めませんでした";
+        retry.hidden = false;
+        retry.addEventListener("click", () => location.reload(), { once: true });
+      });
+    })();
+  </script>
 </body>
 </html>

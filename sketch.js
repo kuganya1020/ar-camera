@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20260806-stage10-polish";
+const APP_BUILD = "20261029-camera-ready-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -110,15 +110,18 @@ function setup() {
   bindUI();
   bindCanvasGestures(canvas.elt);
   detectionWatchdogTimer = window.setInterval(checkFaceDetectionHealth, 750);
-  loadStoredAssets().finally(() => {
-    createIconList();
-    if (SAVED_PLATFORM) {
-      startCamera("user");
-    } else {
-      hideLoaderImmediately();
-      openPlatformSelector(false);
-    }
+  // 保存画像のDB読み込みが遅延・停止しても、カメラ起動は待たせない。
+  const storedAssetsPromise = loadStoredAssets().catch((error) => {
+    console.warn("保存したエフェクトを読み込めませんでした", error);
   });
+  createIconList();
+  if (SAVED_PLATFORM) {
+    startCamera("user");
+  } else {
+    hideLoaderImmediately();
+    openPlatformSelector(false);
+  }
+  storedAssetsPromise.finally(() => createIconList());
 }
 
 function draw() {
@@ -407,12 +410,15 @@ async function startCamera(facingMode) {
     if (generation !== cameraStartGeneration) return false;
 
     let createdVideo;
-    createdVideo = createCapture({ video: videoConstraints, audio: false }, async (stream) => {
+    let cameraFinalized = false;
+    const finalizeCamera = async (stream) => {
+      if (cameraFinalized) return;
       if (generation !== cameraStartGeneration || video !== createdVideo) {
         stream?.getTracks?.().forEach((track) => track.stop());
         createdVideo?.remove?.();
         return;
       }
+      cameraFinalized = true;
       cameraStream = createdVideo.elt.srcObject || stream;
       const activeTrack = cameraStream?.getVideoTracks?.()[0];
       currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
@@ -428,6 +434,10 @@ async function startCamera(facingMode) {
       setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
       if (modelReady) beginFaceDetection();
       else initializeFaceMesh();
+    };
+    createdVideo = createCapture({ video: videoConstraints, audio: false }, (stream) => {
+      // createCapture のコールバックが代入より先に呼ばれる実装でも安全にする。
+      Promise.resolve().then(() => finalizeCamera(stream));
     });
     video = createdVideo;
     createdVideo.hide();
@@ -435,6 +445,11 @@ async function startCamera(facingMode) {
     createdVideo.elt.autoplay = true;
     createdVideo.elt.playsInline = true;
     createdVideo.elt.setAttribute("playsinline", "");
+    const handleCameraReady = () => finalizeCamera(createdVideo.elt.srcObject);
+    createdVideo.elt.addEventListener("loadedmetadata", handleCameraReady, { once: true });
+    createdVideo.elt.addEventListener("loadeddata", handleCameraReady, { once: true });
+    createdVideo.elt.addEventListener("canplay", handleCameraReady, { once: true });
+    if (createdVideo.elt.readyState >= 1) Promise.resolve().then(handleCameraReady);
     createdVideo.elt.addEventListener("error", () => {
       if (generation === cameraStartGeneration && !cameraReady) {
         showCameraError("カメラを開始できませんでした");

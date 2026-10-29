@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261029-camera-ready-fix";
+const APP_BUILD = "20261029-facemesh-ready-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -116,6 +116,8 @@ function setup() {
   });
   createIconList();
   if (SAVED_PLATFORM) {
+    // カメラ準備とモデルのダウンロードを並行し、顔認識開始までの待ち時間を短縮する。
+    initializeFaceMesh();
     startCamera("user");
   } else {
     hideLoaderImmediately();
@@ -506,10 +508,11 @@ function initializeFaceMesh() {
       flipHorizontal: false,
       callback: finishLoading
     });
-    if (createdModel?.then) {
+    faceMesh = createdModel;
+    if (createdModel?.ready?.then) {
+      createdModel.ready.then(() => finishLoading(createdModel)).catch(failLoading);
+    } else if (createdModel?.then) {
       createdModel.then(finishLoading).catch(failLoading);
-    } else {
-      faceMesh = createdModel;
     }
   } catch (error) {
     failLoading(error);

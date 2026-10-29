@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261029-video-frame-ready-fix";
+const APP_BUILD = "20261029-multipoint-tracking";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -170,15 +170,20 @@ function draw() {
     const stampWidth = placement.faceWidth * clamp(config.scale, .2, 6);
     const stampHeight = stampWidth * (stamp.height / stamp.width);
     const offsetScale = placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH;
+    // 顔の中心を原点にして、位置・大きさ・傾きを同じ変換で適用する。
+    // PNGそのものは反転せず、前面カメラでも文字やイラストの向きを保つ。
+    push();
+    translate(placement.x, placement.y);
+    rotate(placement.angle);
     imageMode(CENTER);
     image(
       stamp,
-      placement.x + numberOrZero(config.xOff) * offsetScale,
-      placement.y + numberOrZero(config.yOff) * offsetScale,
+      numberOrZero(config.xOff) * offsetScale,
+      numberOrZero(config.yOff) * offsetScale,
       stampWidth,
       stampHeight
     );
-    imageMode(CORNER);
+    pop();
   }
   if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
 }
@@ -261,18 +266,53 @@ function facePointToCanvas(point, frame) {
 }
 
 function resolveFacePlacement(face, frame) {
-  if (!face?.keypoints?.[1] || !face.keypoints[234] || !face.keypoints[454]) return null;
-  const nose = facePointToCanvas(face.keypoints[1], frame);
-  const leftCheek = facePointToCanvas(face.keypoints[234], frame);
-  const rightCheek = facePointToCanvas(face.keypoints[454], frame);
-  if (!nose || !leftCheek || !rightCheek) return null;
+  const requiredIndices = [1, 10, 33, 61, 152, 234, 263, 291, 454];
+  if (!face?.keypoints || requiredIndices.some((index) => !face.keypoints[index])) return null;
+  const points = Object.fromEntries(requiredIndices.map((index) => [
+    index,
+    facePointToCanvas(face.keypoints[index], frame)
+  ]));
+  if (Object.values(points).some((point) => !point)) return null;
+
+  const nose = points[1];
+  const forehead = points[10];
+  const leftEye = points[33];
+  const rightEye = points[263];
+  const leftMouth = points[61];
+  const rightMouth = points[291];
+  const chin = points[152];
+  const leftCheek = points[234];
+  const rightCheek = points[454];
+
+  // 輪郭だけに依存せず、目と口も使って顔幅を安定化する。
+  // 頬幅を主成分にしているため、既存エフェクトの大きさはほぼ維持される。
+  const cheekWidth = pointDistance(leftCheek, rightCheek);
+  const eyeBasedWidth = pointDistance(leftEye, rightEye) * 1.55;
+  const mouthBasedWidth = pointDistance(leftMouth, rightMouth) * 2.45;
+  const supportingWidth = median([cheekWidth, eyeBasedWidth, mouthBasedWidth]);
+  const faceWidth = cheekWidth * .72 + supportingWidth * .28;
+
+  // 目・口・頬の3本の軸から顔の傾きを求める。
+  // 180度反転を同じ軸として扱うため、端末の左右反転にも影響されない。
+  const angle = averageAxisAngle([
+    lineAngle(leftCheek, rightCheek),
+    lineAngle(leftEye, rightEye),
+    lineAngle(leftMouth, rightMouth)
+  ]);
   const rawPlacement = {
     // 組み込みエフェクトの既存オフセットは鼻を基準に調整されている。
     // 顔幅だけは左右の頬234・454から求め、配置中心は鼻1を使う。
     x: nose.x,
     y: nose.y,
-    faceWidth: pointDistance(leftCheek, rightCheek),
+    faceWidth,
+    angle,
     nose,
+    forehead,
+    leftEye,
+    rightEye,
+    leftMouth,
+    rightMouth,
+    chin,
     leftCheek,
     rightCheek
   };
@@ -296,6 +336,7 @@ function resolveFacePlacement(face, frame) {
   let targetX = rawPlacement.x;
   let targetY = rawPlacement.y;
   let targetWidth = rawPlacement.faceWidth;
+  let targetAngle = rawPlacement.angle;
   const centerDistance = Math.hypot(targetX - previous.x, targetY - previous.y);
   const movementRatio = centerDistance / previousWidth;
   const widthChangeRatio = Math.abs(targetWidth - previousWidth) / previousWidth;
@@ -308,23 +349,29 @@ function resolveFacePlacement(face, frame) {
     targetY = previous.y + (targetY - previous.y) * stepRatio;
   }
   targetWidth = clamp(targetWidth, previousWidth * .82, previousWidth * 1.18);
+  const angleDelta = shortestAngleDelta(previous.angle || 0, targetAngle);
+  targetAngle = (previous.angle || 0) + clamp(angleDelta, -.28, .28);
 
   // 顔幅の約1.2%未満の揺れは止める。移動が大きいほど追従を速くする。
   const centerDeadZone = previousWidth * .012;
   if (Math.abs(targetX - previous.x) < centerDeadZone) targetX = previous.x;
   if (Math.abs(targetY - previous.y) < centerDeadZone) targetY = previous.y;
   if (widthChangeRatio < .015) targetWidth = previousWidth;
+  if (Math.abs(angleDelta) < .008) targetAngle = previous.angle || 0;
 
   const elapsedFrames = clamp((now - previous.updatedAt) / 33.333, .5, 3);
   const centerBaseAlpha = clamp(.14 + movementRatio * 2.4, .14, .82);
   const widthBaseAlpha = clamp(.1 + widthChangeRatio * 2, .1, .58);
   const centerAlpha = 1 - Math.pow(1 - centerBaseAlpha, elapsedFrames);
   const widthAlpha = 1 - Math.pow(1 - widthBaseAlpha, elapsedFrames);
+  const angleBaseAlpha = clamp(.16 + Math.abs(angleDelta) * 1.8, .16, .72);
+  const angleAlpha = 1 - Math.pow(1 - angleBaseAlpha, elapsedFrames);
   const smoothed = {
     ...rawPlacement,
     x: previous.x + (targetX - previous.x) * centerAlpha,
     y: previous.y + (targetY - previous.y) * centerAlpha,
     faceWidth: previousWidth + (targetWidth - previousWidth) * widthAlpha,
+    angle: (previous.angle || 0) + shortestAngleDelta(previous.angle || 0, targetAngle) * angleAlpha,
     face,
     updatedAt: now,
     frameKey
@@ -1534,6 +1581,38 @@ function byId(id) {
 
 function pointDistance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function lineAngle(a, b) {
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
+
+function averageAxisAngle(angles) {
+  if (!angles.length) return 0;
+  let sumX = 0;
+  let sumY = 0;
+  for (const angle of angles) {
+    // 顔の横軸は左右を入れ替えても同じなので、角度を2倍して平均する。
+    sumX += Math.cos(angle * 2);
+    sumY += Math.sin(angle * 2);
+  }
+  return Math.atan2(sumY, sumX) / 2;
+}
+
+function shortestAngleDelta(from, to) {
+  let delta = to - from;
+  while (delta > Math.PI / 2) delta -= Math.PI;
+  while (delta < -Math.PI / 2) delta += Math.PI;
+  return delta;
+}
+
+function median(values) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!sorted.length) return 0;
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 function clamp(value, min, max) {

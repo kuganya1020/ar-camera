@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261029-facemesh-ready-fix";
+const APP_BUILD = "20261029-video-frame-ready-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -420,16 +420,24 @@ async function startCamera(facingMode) {
         createdVideo?.remove?.();
         return;
       }
-      cameraFinalized = true;
       cameraStream = createdVideo.elt.srcObject || stream;
       const activeTrack = cameraStream?.getVideoTracks?.()[0];
       currentDeviceId = activeTrack?.getSettings?.().deviceId || currentDeviceId;
       try { await createdVideo.elt.play(); } catch {}
+      if (cameraFinalized) return;
       if (generation !== cameraStartGeneration || video !== createdVideo) {
         stream?.getTracks?.().forEach((track) => track.stop());
         createdVideo?.remove?.();
         return;
       }
+      // metadataだけでは座標基準が未確定の端末がある。
+      // 実フレームと入力サイズがそろうまでFaceMeshを開始しない。
+      if (createdVideo.elt.readyState < 2 ||
+          !createdVideo.elt.videoWidth ||
+          !createdVideo.elt.videoHeight) {
+        return;
+      }
+      cameraFinalized = true;
       cameraReady = true;
       setCameraSwitchBusy(false);
       hideLoader();

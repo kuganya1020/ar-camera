@@ -1112,7 +1112,7 @@ body.adjustment-mode .capture-ui, body.adjustment-mode .effects-dock { opacity: 
   position: fixed;
   z-index: 22;
   right: auto;
-  bottom: calc(112px + var(--bottom-safe));
+  bottom: calc(90px + var(--bottom-safe));
   left: 50%;
   display: grid;
   grid-template-columns: auto;
@@ -1150,7 +1150,7 @@ body.adjustment-mode .capture-ui, body.adjustment-mode .effects-dock { opacity: 
   .capture-ui {
     position: fixed;
     right: auto;
-    bottom: calc(108px + var(--bottom-safe));
+    bottom: calc(88px + var(--bottom-safe));
     left: 50%;
     display: grid;
     transform: translateX(-50%);
@@ -1166,7 +1166,7 @@ body.adjustment-mode .capture-ui, body.adjustment-mode .effects-dock { opacity: 
 
 @media (orientation: landscape) and (max-height: 560px) {
   .capture-ui {
-    bottom: calc(88px + var(--bottom-safe));
+    bottom: calc(82px + var(--bottom-safe));
     grid-template-rows: auto 60px auto;
   }
 }

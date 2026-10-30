@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261029-multipoint-tracking";
+const APP_BUILD = "20261030-face-roll-fix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
@@ -294,11 +294,11 @@ function resolveFacePlacement(face, frame) {
 
   // 目・口・頬の3本の軸から顔の傾きを求める。
   // 180度反転を同じ軸として扱うため、端末の左右反転にも影響されない。
-  const angle = averageAxisAngle([
+  const angle = normalizeFaceRoll(averageAxisAngle([
     lineAngle(leftCheek, rightCheek),
     lineAngle(leftEye, rightEye),
     lineAngle(leftMouth, rightMouth)
-  ]);
+  ]));
   const rawPlacement = {
     // 組み込みエフェクトの既存オフセットは鼻を基準に調整されている。
     // 顔幅だけは左右の頬234・454から求め、配置中心は鼻1を使う。
@@ -1597,6 +1597,14 @@ function averageAxisAngle(angles) {
     sumY += Math.sin(angle * 2);
   }
   return Math.atan2(sumY, sumX) / 2;
+}
+
+function normalizeFaceRoll(angle) {
+  // 縦向きセンサーでは顔の横軸が90度側の等価角で返ることがある。
+  // AR画像には、水平に近い方を顔のロール角として採用する。
+  if (angle > Math.PI / 4) return angle - Math.PI / 2;
+  if (angle < -Math.PI / 4) return angle + Math.PI / 2;
+  return angle;
 }
 
 function shortestAngleDelta(from, to) {

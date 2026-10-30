@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261030-auto-hole-fit";
+const APP_BUILD = "20261030-orientation-tracking";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -74,6 +74,8 @@ let pinchOrigin = null;
 const modalFocusOrigins = new Map();
 let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
+let orientationRefreshFrame = 0;
+let orientationRefreshFrame2 = 0;
 let nextFaceTrackId = 1;
 const facePlacementStates = new Map();
 
@@ -918,18 +920,8 @@ function bindUI() {
       beginFaceDetection();
     }
   });
-  window.addEventListener("orientationchange", () => {
-    // 回転前後ではFaceMeshの座標基準が変わるため、古い平滑化座標を混ぜない。
-    faces = [];
-    facePlacementStates.clear();
-    faceCoordinateSpace = null;
-    observedFaceRange = null;
-    scheduleCanvasResize();
-    if (isRecording) {
-      stopRecording();
-      showToast("画面が回転したため録画を停止しました");
-    }
-  });
+  window.addEventListener("orientationchange", refreshTrackingAfterOrientationChange);
+  screen.orientation?.addEventListener?.("change", refreshTrackingAfterOrientationChange);
   window.addEventListener("pagehide", cleanup);
   window.addEventListener("beforeunload", cleanup);
 
@@ -1475,6 +1467,32 @@ function scheduleCanvasResize() {
   canvasResizeFrame = requestAnimationFrame(syncCanvasToViewport);
 }
 
+function refreshTrackingAfterOrientationChange() {
+  // orientationchangeは新しいviewport寸法が確定する前に発火する端末がある。
+  // タイマーで推測せず、2回の描画フレームを待ってから実寸を読み直す。
+  faces = [];
+  facePlacementStates.clear();
+  faceCoordinateSpace = null;
+  observedFaceRange = null;
+  stopFaceDetection();
+  if (isRecording) {
+    stopRecording();
+    showToast("画面が回転したため録画を停止しました");
+  }
+  if (orientationRefreshFrame) cancelAnimationFrame(orientationRefreshFrame);
+  if (orientationRefreshFrame2) cancelAnimationFrame(orientationRefreshFrame2);
+  orientationRefreshFrame = requestAnimationFrame(() => {
+    orientationRefreshFrame = 0;
+    orientationRefreshFrame2 = requestAnimationFrame(() => {
+      orientationRefreshFrame2 = 0;
+      syncCanvasToViewport();
+      if (cameraReady && video && !cameraSwitchInProgress) {
+        startCamera(isFrontCamera ? "user" : "environment");
+      }
+    });
+  });
+}
+
 function windowResized() {
   scheduleCanvasResize();
 }
@@ -1490,9 +1508,15 @@ function cleanup() {
   detectionWatchdogTimer = null;
   if (canvasResizeFrame) cancelAnimationFrame(canvasResizeFrame);
   canvasResizeFrame = 0;
+  if (orientationRefreshFrame) cancelAnimationFrame(orientationRefreshFrame);
+  if (orientationRefreshFrame2) cancelAnimationFrame(orientationRefreshFrame2);
+  orientationRefreshFrame = 0;
+  orientationRefreshFrame2 = 0;
   canvasResizeObserver?.disconnect();
   canvasResizeObserver = null;
   window.visualViewport?.removeEventListener("resize", scheduleCanvasResize);
+  window.removeEventListener("orientationchange", refreshTrackingAfterOrientationChange);
+  screen.orientation?.removeEventListener?.("change", refreshTrackingAfterOrientationChange);
   stopRecordingTracks();
   stopFaceDetection();
   stopCameraTracks();

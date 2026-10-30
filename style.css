@@ -1075,3 +1075,98 @@ body.adjustment-mode .capture-ui, body.adjustment-mode .effects-dock { opacity: 
   .capture-ui { grid-template-columns: auto 60px; }
   .bottom-sheet { top: 8px; right: 8px; bottom: 8px; width: min(380px, 48vw); }
 }
+
+/* Camera controls: keep the shutter on the optical center line. */
+.control-deck {
+  display: block;
+  min-height: 80px;
+  padding: 10px 12px;
+}
+
+.effects-dock { width: 100%; }
+
+.effect-add,
+.effect-edit {
+  grid-template-rows: 20px 12px;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.effect-add svg,
+.effect-edit svg {
+  display: block;
+  margin: 0;
+}
+
+.effect-add span,
+.effect-edit span {
+  display: block;
+  margin: 0;
+  line-height: 12px;
+  text-align: center;
+}
+
+.capture-ui {
+  position: fixed;
+  z-index: 22;
+  right: auto;
+  bottom: calc(112px + var(--bottom-safe));
+  left: 50%;
+  display: grid;
+  grid-template-columns: auto;
+  grid-template-rows: auto 68px auto;
+  justify-items: center;
+  gap: 7px;
+  transform: translateX(-50%);
+}
+
+.mode-selector {
+  grid-template-columns: repeat(2, auto);
+  grid-row: 1;
+}
+
+#main-shutter-btn {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+#audio-note {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+@media (min-width: 760px) {
+  .control-deck {
+    right: 18px;
+    left: 18px;
+    width: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .control-deck { display: block; padding: 9px; }
+  .capture-ui {
+    position: fixed;
+    right: auto;
+    bottom: calc(108px + var(--bottom-safe));
+    left: 50%;
+    display: grid;
+    transform: translateX(-50%);
+  }
+  .mode-selector {
+    position: static;
+    right: auto;
+    bottom: auto;
+    grid-template-columns: repeat(2, auto);
+  }
+  #main-shutter-btn { grid-column: 1; grid-row: 2; }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .capture-ui {
+    bottom: calc(88px + var(--bottom-safe));
+    grid-template-rows: auto 60px auto;
+  }
+}

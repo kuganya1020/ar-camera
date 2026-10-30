@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261030-ui-refined";
+const APP_BUILD = "20261030-frame-contain";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -152,9 +152,10 @@ function draw() {
   }
 
   if (config.point === "bg") {
-    // 背景・フレーム画像は横幅をCanvasへ合わせ、画像の縦横比を維持する。
-    // config.scale=1のとき、画像の横幅と画面の横幅が完全に一致する。
-    const backgroundScale = (width / stamp.width) * clamp(config.scale, .2, 6);
+    // 背景・フレーム画像はCanvasの幅と高さの両方に収める。
+    // iPadなど縦横比が異なる端末でも、scale=1なら画像全体が欠けない。
+    const fitScale = Math.min(width / stamp.width, height / stamp.height);
+    const backgroundScale = fitScale * clamp(config.scale, .2, 6);
     imageMode(CENTER);
     image(
       stamp,
@@ -1025,8 +1026,8 @@ function selectEffect(index) {
   if (selected?.point === "face" && !faces.length) {
     setStatus("顔を認識中");
   } else {
-    setStatus(selected?.name || "エフェクトなし");
-    window.setTimeout(() => { byId("status-pill").style.opacity = "0"; }, 900);
+    // 選択状態はアイコンの枠で伝わるため、エフェクト名の一時表示は行わない。
+    byId("status-pill").style.opacity = "0";
   }
 }
 

@@ -12,7 +12,7 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20260806-stage10-polish">
+  <link rel="stylesheet" href="style.css?v=20261030-ui-system">
   <script>
     (() => {
       let platform = "";
@@ -29,7 +29,7 @@
   </script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
-  <script defer src="sketch.js?v=20261030-direct-facemesh-space"></script>
+  <script defer src="sketch.js?v=20261030-ui-refined"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -37,7 +37,9 @@
 
     <header class="top-bar">
       <div class="top-actions">
-        <button id="help-btn" class="icon-btn" type="button" aria-label="使い方">?</button>
+        <button id="help-btn" class="icon-btn" type="button" aria-label="使い方">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.8 9a2.35 2.35 0 0 1 4.55.78c0 1.8-2.35 2.05-2.35 3.65"></path><path d="M12 17h.01"></path></svg>
+        </button>
         <button id="switch-camera-btn" class="icon-btn" type="button" aria-label="カメラを切り替える">
           <img src="switch_icon.png?v=20260802" alt="" aria-hidden="true">
         </button>
@@ -47,20 +49,28 @@
     <div id="status-pill" role="status" aria-live="polite">カメラを準備中</div>
     <div id="video-timer" aria-live="off">00:00</div>
 
-    <section class="capture-ui" aria-label="撮影">
-      <div class="mode-selector" role="tablist" aria-label="撮影モード">
-        <button id="mode-photo" class="mode-btn active" type="button" role="tab" aria-selected="true">写真</button>
-        <button id="mode-video" class="mode-btn" type="button" role="tab" aria-selected="false">動画</button>
-      </div>
-      <button id="main-shutter-btn" type="button" aria-label="写真を撮る"><span></span></button>
-      <span id="audio-note">動画は無音です</span>
-    </section>
+    <div class="control-deck">
+      <nav class="effects-dock" aria-label="エフェクト">
+        <button id="open-settings-btn" class="effect-add" type="button" aria-label="画像を追加">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          <span>追加</span>
+        </button>
+        <button id="edit-selected-btn" class="effect-edit" type="button" aria-label="選択中のエフェクトを編集" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4Z"></path><path d="m13.5 6.5 4 4"></path></svg>
+          <span>調整</span>
+        </button>
+        <div id="icon-list" role="list" aria-label="エフェクト一覧"></div>
+      </nav>
 
-    <nav class="effects-dock" aria-label="エフェクト">
-      <button id="open-settings-btn" class="effect-add" type="button" aria-label="画像を追加">＋</button>
-      <button id="edit-selected-btn" class="effect-edit" type="button" aria-label="選択中のエフェクトを編集" hidden>編集</button>
-      <div id="icon-list" role="list"></div>
-    </nav>
+      <section class="capture-ui" aria-label="撮影">
+        <div class="mode-selector" role="tablist" aria-label="撮影モード">
+          <button id="mode-photo" class="mode-btn active" type="button" role="tab" aria-selected="true">写真</button>
+          <button id="mode-video" class="mode-btn" type="button" role="tab" aria-selected="false">動画</button>
+        </div>
+        <button id="main-shutter-btn" type="button" aria-label="写真を撮る"><span></span></button>
+        <span id="audio-note">無音で録画</span>
+      </section>
+    </div>
 
     <div id="sheet-backdrop" hidden></div>
     <section id="settings-panel" class="bottom-sheet" aria-labelledby="panel-title" aria-modal="true" role="dialog" hidden>
@@ -71,7 +81,7 @@
       </div>
       <div id="upload-section">
         <p class="step-label"><span>1</span>画像を選ぶ</p>
-        <label class="file-button" for="file-input">端末から画像を選ぶ</label>
+        <label class="file-button" for="file-input">画像を選択</label>
         <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp">
       </div>
       <div id="effect-edit-controls">
@@ -87,7 +97,7 @@
       <div class="sheet-actions">
         <button id="delete-btn" class="danger-btn" type="button" hidden>削除</button>
         <button id="cancel-edit-btn" class="secondary-btn" type="button">キャンセル</button>
-        <button id="save-effect-btn" class="primary-btn" type="button">位置を調整</button>
+        <button id="save-effect-btn" class="primary-btn" type="button">プレビューで調整</button>
       </div>
     </section>
 
@@ -97,7 +107,7 @@
         <strong>位置を調整</strong>
         <button id="adjustment-save-btn" class="overlay-save-btn" type="button">保存</button>
       </header>
-      <p class="adjustment-hint">1本指で移動・2本指で拡大縮小</p>
+      <p class="adjustment-hint">ドラッグで移動・ピンチで拡大縮小</p>
       <div class="adjustment-toolbar">
         <div class="adjustment-quick-actions">
           <button id="fine-adjust-toggle" class="toolbar-action-btn" type="button" aria-expanded="false">微調整</button>
@@ -126,13 +136,13 @@
 
     <section id="tutorial-overlay" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="tutorial-title" hidden>
       <div class="plain-modal">
-        <h2 id="tutorial-title">使い方</h2>
+        <h2 id="tutorial-title">AR Cameraの使い方</h2>
         <ol>
           <li>下の一覧からエフェクトを選びます。</li>
           <li>＋ボタンで自分の画像を追加できます。</li>
           <li>中央のボタンで写真・動画を保存します。</li>
         </ol>
-        <p>追加画像は、全画面の調整モードで位置と大きさを変更できます。</p>
+        <p>追加した画像はプレビューを見ながら位置と大きさを調整できます。</p>
         <button id="change-platform-btn" class="secondary-btn device-settings-btn" type="button">端末設定を変更</button>
         <button id="tutorial-close-btn" class="primary-btn" type="button">わかりました</button>
       </div>

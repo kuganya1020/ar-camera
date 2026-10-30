@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261030-direct-facemesh-space";
+const APP_BUILD = "20261030-ui-refined";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -72,6 +72,7 @@ let dbPromise;
 const activePointers = new Map();
 let pinchOrigin = null;
 const modalFocusOrigins = new Map();
+let sheetFocusOrigin = null;
 let canvasResizeObserver = null;
 let canvasResizeFrame = 0;
 let orientationRefreshFrame = 0;
@@ -908,6 +909,7 @@ function bindUI() {
   });
   window.addEventListener("orientationchange", refreshTrackingAfterOrientationChange);
   screen.orientation?.addEventListener?.("change", refreshTrackingAfterOrientationChange);
+  document.addEventListener("keydown", handleGlobalKeydown);
   window.addEventListener("pagehide", cleanup);
   window.addEventListener("beforeunload", cleanup);
 
@@ -982,6 +984,8 @@ function createIconList() {
     button.className = `filter-icon${index === currentIndex ? " active" : ""}`;
     button.setAttribute("role", "listitem");
     button.setAttribute("aria-label", `${asset.name || "エフェクト"}を選ぶ`);
+    button.setAttribute("aria-pressed", String(index === currentIndex));
+    button.title = asset.name || "エフェクト";
     button.dataset.empty = String(asset.point === "none");
     const imageUrl = getAssetPreviewUrl(asset);
     if (imageUrl) button.style.backgroundImage = `url("${imageUrl}")`;
@@ -1088,15 +1092,37 @@ function toggleFineAdjustControls() {
 }
 
 function setSheet(open) {
-  byId("settings-panel").hidden = !open;
+  const panel = byId("settings-panel");
+  if (open) sheetFocusOrigin = document.activeElement;
+  panel.hidden = !open;
   byId("sheet-backdrop").hidden = !open;
   document.body.classList.toggle("sheet-open", open);
+  if (open) {
+    requestAnimationFrame(() => {
+      panel.querySelector("button:not([hidden]):not([disabled]), input:not([hidden]):not([disabled])")?.focus();
+    });
+  } else if (sheetFocusOrigin?.isConnected) {
+    sheetFocusOrigin.focus();
+    sheetFocusOrigin = null;
+  }
 }
 
 function syncPlacementButtons() {
   document.querySelectorAll(".part-btn").forEach((button) => {
-    button.classList.toggle("active", button.dataset.point === draftConfig?.point);
+    const active = button.dataset.point === draftConfig?.point;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
   });
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== "Escape") return;
+  if (!byId("delete-dialog").hidden) return setModal("delete-dialog", false);
+  if (!byId("tutorial-overlay").hidden) return setModal("tutorial-overlay", false);
+  if (!byId("platform-overlay").hidden && !byId("platform-cancel-btn").hidden) {
+    return setModal("platform-overlay", false);
+  }
+  if (!byId("adjustment-mode").hidden || !byId("settings-panel").hidden) cancelSheet();
 }
 
 function syncEditorUI() {
@@ -1503,6 +1529,7 @@ function cleanup() {
   window.visualViewport?.removeEventListener("resize", scheduleCanvasResize);
   window.removeEventListener("orientationchange", refreshTrackingAfterOrientationChange);
   screen.orientation?.removeEventListener?.("change", refreshTrackingAfterOrientationChange);
+  document.removeEventListener("keydown", handleGlobalKeydown);
   stopRecordingTracks();
   stopFaceDetection();
   stopCameraTracks();

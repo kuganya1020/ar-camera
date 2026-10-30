@@ -1,10 +1,10 @@
 "use strict";
 
-const APP_BUILD = "20261030-face-roll-fix";
+const APP_BUILD = "20261030-auto-hole-fit";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
-  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 2.4, xOff: 0, yOff: -25 },
-  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 2.5, xOff: 0, yOff: -25 },
+  { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
+  { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
   { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
   { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
 ];
@@ -37,6 +37,7 @@ let currentDeviceId = "";
 let faces = [];
 let assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset }));
 let images = new Map();
+const effectGeometryCache = new WeakMap();
 const assetPreviewUrls = new Map();
 let currentIndex = 1;
 let currentMode = "photo";
@@ -167,6 +168,11 @@ function draw() {
   for (const face of faces.slice(0, 5)) {
     const placement = resolveFacePlacement(face, frame);
     if (!placement) continue;
+    const hole = getTransparentHoleGeometry(stamp);
+    if (hole) {
+      drawAutoFittedFaceEffect(stamp, config, placement, hole);
+      continue;
+    }
     const stampWidth = placement.faceWidth * clamp(config.scale, .2, 6);
     const stampHeight = stampWidth * (stamp.height / stamp.width);
     const offsetScale = placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH;
@@ -202,6 +208,125 @@ function getCameraFrame() {
     width: sourceWidth * scale,
     height: sourceHeight * scale
   };
+}
+
+function drawAutoFittedFaceEffect(stamp, config, placement, hole) {
+  // 顔全体がPNGの透明な穴へ収まる最小倍率を自動計算する。
+  const targetHoleWidth = placement.faceWidth * 1.08;
+  const targetHoleHeight = placement.faceHeight * 1.06;
+  const automaticScale = Math.max(
+    targetHoleWidth / Math.max(1, hole.width),
+    targetHoleHeight / Math.max(1, hole.height)
+  );
+  const finalScale = automaticScale * clamp(config.scale, .2, 6);
+  const stampWidth = stamp.width * finalScale;
+  const stampHeight = stamp.height * finalScale;
+  const holeOffsetX = (hole.centerX - stamp.width / 2) * finalScale;
+  const holeOffsetY = (hole.centerY - stamp.height / 2) * finalScale;
+  const adjustmentScale = placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH;
+
+  push();
+  translate(placement.ovalX, placement.ovalY);
+  rotate(placement.angle);
+  imageMode(CENTER);
+  image(
+    stamp,
+    -holeOffsetX + numberOrZero(config.xOff) * adjustmentScale,
+    -holeOffsetY + numberOrZero(config.yOff) * adjustmentScale,
+    stampWidth,
+    stampHeight
+  );
+  pop();
+}
+
+function getTransparentHoleGeometry(stamp) {
+  if (!stamp || !(stamp.width > 0 && stamp.height > 0)) return null;
+  if (effectGeometryCache.has(stamp)) return effectGeometryCache.get(stamp);
+
+  stamp.loadPixels();
+  const pixelCount = stamp.width * stamp.height;
+  if (!stamp.pixels || stamp.pixels.length < pixelCount * 4) {
+    effectGeometryCache.set(stamp, null);
+    return null;
+  }
+
+  const visited = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+  const isTransparent = (index) => stamp.pixels[index * 4 + 3] < 24;
+  let head = 0;
+  let tail = 0;
+  const enqueueOutside = (index) => {
+    if (index < 0 || index >= pixelCount || visited[index] || !isTransparent(index)) return;
+    visited[index] = 1;
+    queue[tail++] = index;
+  };
+
+  // 画像の外周からつながる透明部分を「背景」として塗りつぶす。
+  for (let x = 0; x < stamp.width; x += 1) {
+    enqueueOutside(x);
+    enqueueOutside((stamp.height - 1) * stamp.width + x);
+  }
+  for (let y = 0; y < stamp.height; y += 1) {
+    enqueueOutside(y * stamp.width);
+    enqueueOutside(y * stamp.width + stamp.width - 1);
+  }
+  while (head < tail) {
+    const index = queue[head++];
+    const x = index % stamp.width;
+    const y = Math.floor(index / stamp.width);
+    if (x > 0) enqueueOutside(index - 1);
+    if (x + 1 < stamp.width) enqueueOutside(index + 1);
+    if (y > 0) enqueueOutside(index - stamp.width);
+    if (y + 1 < stamp.height) enqueueOutside(index + stamp.width);
+  }
+
+  // 背景とつながっていない透明領域のうち、最大のものを顔穴として採用する。
+  let best = null;
+  const enqueueHole = (next) => {
+    if (next < 0 || next >= pixelCount || visited[next] || !isTransparent(next)) return;
+    visited[next] = 2;
+    queue[tail++] = next;
+  };
+  for (let start = 0; start < pixelCount; start += 1) {
+    if (visited[start] || !isTransparent(start)) continue;
+    head = 0;
+    tail = 0;
+    visited[start] = 2;
+    queue[tail++] = start;
+    let count = 0;
+    let minX = stamp.width;
+    let minY = stamp.height;
+    let maxX = -1;
+    let maxY = -1;
+    while (head < tail) {
+      const index = queue[head++];
+      const x = index % stamp.width;
+      const y = Math.floor(index / stamp.width);
+      count += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (x > 0) enqueueHole(index - 1);
+      if (x + 1 < stamp.width) enqueueHole(index + 1);
+      if (y > 0) enqueueHole(index - stamp.width);
+      if (y + 1 < stamp.height) enqueueHole(index + stamp.width);
+    }
+    if (!best || count > best.count) best = { count, minX, minY, maxX, maxY };
+  }
+
+  if (!best || best.count < pixelCount * .01) {
+    effectGeometryCache.set(stamp, null);
+    return null;
+  }
+  const geometry = {
+    width: best.maxX - best.minX + 1,
+    height: best.maxY - best.minY + 1,
+    centerX: (best.minX + best.maxX) / 2,
+    centerY: (best.minY + best.maxY) / 2
+  };
+  effectGeometryCache.set(stamp, geometry);
+  return geometry;
 }
 
 function inspectFaceCoordinateSpace(results) {
@@ -305,6 +430,9 @@ function resolveFacePlacement(face, frame) {
     x: nose.x,
     y: nose.y,
     faceWidth,
+    faceHeight: pointDistance(forehead, chin),
+    ovalX: (leftCheek.x + rightCheek.x + forehead.x + chin.x) / 4,
+    ovalY: (forehead.y + chin.y) / 2,
     angle,
     nose,
     forehead,
@@ -336,6 +464,9 @@ function resolveFacePlacement(face, frame) {
   let targetX = rawPlacement.x;
   let targetY = rawPlacement.y;
   let targetWidth = rawPlacement.faceWidth;
+  let targetHeight = rawPlacement.faceHeight;
+  let targetOvalX = rawPlacement.ovalX;
+  let targetOvalY = rawPlacement.ovalY;
   let targetAngle = rawPlacement.angle;
   const centerDistance = Math.hypot(targetX - previous.x, targetY - previous.y);
   const movementRatio = centerDistance / previousWidth;
@@ -349,6 +480,8 @@ function resolveFacePlacement(face, frame) {
     targetY = previous.y + (targetY - previous.y) * stepRatio;
   }
   targetWidth = clamp(targetWidth, previousWidth * .82, previousWidth * 1.18);
+  const previousHeight = Math.max(1, previous.faceHeight || rawPlacement.faceHeight);
+  targetHeight = clamp(targetHeight, previousHeight * .82, previousHeight * 1.18);
   const angleDelta = shortestAngleDelta(previous.angle || 0, targetAngle);
   targetAngle = (previous.angle || 0) + clamp(angleDelta, -.28, .28);
 
@@ -371,6 +504,11 @@ function resolveFacePlacement(face, frame) {
     x: previous.x + (targetX - previous.x) * centerAlpha,
     y: previous.y + (targetY - previous.y) * centerAlpha,
     faceWidth: previousWidth + (targetWidth - previousWidth) * widthAlpha,
+    faceHeight: previousHeight + (targetHeight - previousHeight) * widthAlpha,
+    ovalX: (previous.ovalX ?? rawPlacement.ovalX) +
+      (targetOvalX - (previous.ovalX ?? rawPlacement.ovalX)) * centerAlpha,
+    ovalY: (previous.ovalY ?? rawPlacement.ovalY) +
+      (targetOvalY - (previous.ovalY ?? rawPlacement.ovalY)) * centerAlpha,
     angle: (previous.angle || 0) + shortestAngleDelta(previous.angle || 0, targetAngle) * angleAlpha,
     face,
     updatedAt: now,

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261030-orientation-tracking";
+const APP_BUILD = "20261030-direct-facemesh-space";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -352,22 +352,14 @@ function resolveFaceCoordinateSpace(maxX, maxY, inputWidth, inputHeight) {
   }
   if (!(inputWidth > 0 && inputHeight > 0)) return null;
 
-  // iPhone/iPad/Androidという端末名では補正しない。
-  // FaceMeshへ渡したvideoの座標基準だけから変換を決め、Canvas側の中央クロップは
-  // getCameraFrame()のframe.x/frame.y/frame.scaleで一度だけ適用する。
-  if (inputHeight > inputWidth) {
-    return {
-      width: inputHeight,
-      height: inputWidth,
-      rotation: "clockwise",
-      name: "landscape sensor -> portrait CW"
-    };
-  }
+  // 実機デバッグで、ml5 1.2.1は縦画面でもvideo.width/video.heightと同じ
+  // 480x640座標を返すことを確認済み。センサー向きを推測して90度回転すると
+  // 頬を結ぶ線が縦になるため、FaceMesh座標をそのまま使用する。
   return {
     width: inputWidth,
     height: inputHeight,
     rotation: "none",
-    name: "video.width/video.height"
+    name: "direct video.width/video.height"
   };
 }
 
@@ -377,12 +369,6 @@ function facePointToCanvas(point, frame) {
   let sourceY = point.y;
   let sourceWidth = faceCoordinateSpace.width;
   let sourceHeight = faceCoordinateSpace.height;
-  if (faceCoordinateSpace.rotation === "clockwise") {
-    sourceX = faceCoordinateSpace.height - point.y;
-    sourceY = point.x;
-    sourceWidth = faceCoordinateSpace.height;
-    sourceHeight = faceCoordinateSpace.width;
-  }
   const rawX = frame.x + sourceX * (frame.width / sourceWidth);
   // 前面カメラ映像はdraw()内で1回だけ反転しているため、
   // FaceMesh座標にも端末を問わず同じ1回の反転を適用する。

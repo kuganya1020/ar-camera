@@ -39,6 +39,11 @@
       <div class="row"><span>状態</span><strong id="status">開始待ち</strong></div>
       <div class="row"><span>検出した顔</span><strong id="face-count">0</strong></div>
       <div class="row"><span>3D変換行列</span><strong id="matrix-status">未確認</strong></div>
+      <div class="row"><span>Yaw（左右）</span><strong id="yaw">—</strong></div>
+      <div class="row"><span>Pitch（上下）</span><strong id="pitch">—</strong></div>
+      <div class="row"><span>Roll（傾き）</span><strong id="roll">—</strong></div>
+      <div class="row"><span>奥行き（相対値）</span><strong id="depth">—</strong></div>
+      <div class="row"><span>角度の揺れ</span><strong id="jitter">—</strong></div>
       <div class="row"><span>処理時間</span><strong id="latency">—</strong></div>
     </div>
     <button id="start-btn" type="button">カメラテストを開始</button>
@@ -56,10 +61,18 @@
     const status = document.getElementById("status");
     const faceCount = document.getElementById("face-count");
     const matrixStatus = document.getElementById("matrix-status");
+    const yawOutput = document.getElementById("yaw");
+    const pitchOutput = document.getElementById("pitch");
+    const rollOutput = document.getElementById("roll");
+    const depthOutput = document.getElementById("depth");
+    const jitterOutput = document.getElementById("jitter");
     const latency = document.getElementById("latency");
     let landmarker = null;
     let lastVideoTime = -1;
     let running = false;
+    let smoothedPose = null;
+    let previousRawPose = null;
+    const poseDeltas = [];
 
     function setStatus(message, type = "") {
       status.textContent = message;
@@ -106,6 +119,82 @@
       }
     }
 
+    function clamp(value, minimum, maximum) {
+      return Math.min(maximum, Math.max(minimum, value));
+    }
+
+    function matrixToPose(matrix) {
+      const elements = matrix?.data;
+      if (!elements || elements.length < 16) return null;
+
+      // MediaPipeの4x4列優先行列をXYZオイラー角へ分解する。
+      const m11 = elements[0];
+      const m12 = elements[4];
+      const m13 = elements[8];
+      const m22 = elements[5];
+      const m23 = elements[9];
+      const m32 = elements[6];
+      const m33 = elements[10];
+      const yaw = Math.asin(clamp(m13, -1, 1));
+      let pitch;
+      let roll;
+      if (Math.abs(m13) < .9999999) {
+        pitch = Math.atan2(-m23, m33);
+        roll = Math.atan2(-m12, m11);
+      } else {
+        pitch = Math.atan2(m32, m22);
+        roll = 0;
+      }
+      const toDegrees = 180 / Math.PI;
+      return {
+        yaw: yaw * toDegrees,
+        pitch: pitch * toDegrees,
+        roll: roll * toDegrees,
+        depth: elements[14]
+      };
+    }
+
+    function updatePoseReadout(matrix) {
+      const rawPose = matrixToPose(matrix);
+      if (!rawPose) {
+        yawOutput.textContent = "—";
+        pitchOutput.textContent = "—";
+        rollOutput.textContent = "—";
+        depthOutput.textContent = "—";
+        jitterOutput.textContent = "—";
+        smoothedPose = null;
+        previousRawPose = null;
+        poseDeltas.length = 0;
+        return;
+      }
+
+      if (previousRawPose) {
+        const delta = Math.hypot(
+          rawPose.yaw - previousRawPose.yaw,
+          rawPose.pitch - previousRawPose.pitch,
+          rawPose.roll - previousRawPose.roll
+        );
+        poseDeltas.push(delta);
+        if (poseDeltas.length > 30) poseDeltas.shift();
+      }
+      previousRawPose = rawPose;
+
+      const smoothing = .2;
+      if (!smoothedPose) smoothedPose = { ...rawPose };
+      for (const key of ["yaw", "pitch", "roll", "depth"]) {
+        smoothedPose[key] += (rawPose[key] - smoothedPose[key]) * smoothing;
+      }
+
+      const averageJitter = poseDeltas.length
+        ? poseDeltas.reduce((sum, value) => sum + value, 0) / poseDeltas.length
+        : 0;
+      yawOutput.textContent = `${smoothedPose.yaw >= 0 ? "+" : ""}${smoothedPose.yaw.toFixed(1)}°`;
+      pitchOutput.textContent = `${smoothedPose.pitch >= 0 ? "+" : ""}${smoothedPose.pitch.toFixed(1)}°`;
+      rollOutput.textContent = `${smoothedPose.roll >= 0 ? "+" : ""}${smoothedPose.roll.toFixed(1)}°`;
+      depthOutput.textContent = smoothedPose.depth.toFixed(2);
+      jitterOutput.textContent = `${averageJitter.toFixed(2)}°/frame`;
+    }
+
     function predict() {
       if (!running) return;
       if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
@@ -119,6 +208,7 @@
         matrixStatus.className = matrices.length ? "ok" : "error";
         latency.textContent = `${Math.round(performance.now() - startedAt)} ms`;
         drawLandmarks(faces[0]);
+        updatePoseReadout(matrices[0]);
       }
       requestAnimationFrame(predict);
     }

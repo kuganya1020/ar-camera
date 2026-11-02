@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261102-mediapipe-ab";
+const APP_BUILD = "20261102-mediapipe-aspect";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -228,13 +228,13 @@ function drawAutoFittedFaceEffect(stamp, config, placement, hole) {
   let holeOffsetY;
 
   if (USE_MEDIAPIPE_TRACKER) {
-    // テスト画面で確認済みの方式。顔の3D投影後の縦横寸法へ穴を個別に合わせる。
-    const scaleX = targetHoleWidth / Math.max(1, hole.width) * configuredScale;
-    const scaleY = targetHoleHeight / Math.max(1, hole.height) * configuredScale;
-    stampWidth = stamp.width * scaleX;
-    stampHeight = stamp.height * scaleY;
-    holeOffsetX = (hole.centerX - stamp.width / 2) * scaleX;
-    holeOffsetY = (hole.centerY - stamp.height / 2) * scaleY;
+    // 横幅を基準に単一倍率で拡大し、PNG本来の縦横比を必ず維持する。
+    // 額と顎をすべて穴へ収めることより、目・鼻・口が自然に見えることを優先する。
+    const uniformScale = targetHoleWidth / Math.max(1, hole.width) * configuredScale;
+    stampWidth = stamp.width * uniformScale;
+    stampHeight = stamp.height * uniformScale;
+    holeOffsetX = (hole.centerX - stamp.width / 2) * uniformScale;
+    holeOffsetY = (hole.centerY - stamp.height / 2) * uniformScale;
   } else {
     const automaticScale = Math.max(
       targetHoleWidth / Math.max(1, hole.width),

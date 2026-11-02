@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261030-frame-contain";
+const APP_BUILD = "20261102-mediapipe-ab";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -16,7 +16,10 @@ const DB_STORE = "images";
 const MAX_UPLOAD_EDGE = 1280;
 const MAX_UPLOAD_PIXELS = 1600000;
 const FACE_OFFSET_REFERENCE_WIDTH = 100;
-const DEBUG_FACE_MESH = new URLSearchParams(location.search).get("debug") === "1";
+const URL_PARAMS = new URLSearchParams(location.search);
+const DEBUG_FACE_MESH = URL_PARAMS.get("debug") === "1";
+const TRACKER_MODE = URL_PARAMS.get("tracker") === "mediapipe" ? "mediapipe" : "ml5";
+const USE_MEDIAPIPE_TRACKER = TRACKER_MODE === "mediapipe";
 const PLATFORM_KEY = "arCameraPlatformV1";
 const SAVED_PLATFORM = readSavedPlatform();
 const AUTO_PLATFORM = /Android/i.test(navigator.userAgent) ? "android" : "ios";
@@ -218,15 +221,31 @@ function drawAutoFittedFaceEffect(stamp, config, placement, hole) {
   // 顔全体がPNGの透明な穴へ収まる最小倍率を自動計算する。
   const targetHoleWidth = placement.faceWidth * 1.08;
   const targetHoleHeight = placement.faceHeight * 1.06;
-  const automaticScale = Math.max(
-    targetHoleWidth / Math.max(1, hole.width),
-    targetHoleHeight / Math.max(1, hole.height)
-  );
-  const finalScale = automaticScale * clamp(config.scale, .2, 6);
-  const stampWidth = stamp.width * finalScale;
-  const stampHeight = stamp.height * finalScale;
-  const holeOffsetX = (hole.centerX - stamp.width / 2) * finalScale;
-  const holeOffsetY = (hole.centerY - stamp.height / 2) * finalScale;
+  const configuredScale = clamp(config.scale, .2, 6);
+  let stampWidth;
+  let stampHeight;
+  let holeOffsetX;
+  let holeOffsetY;
+
+  if (USE_MEDIAPIPE_TRACKER) {
+    // テスト画面で確認済みの方式。顔の3D投影後の縦横寸法へ穴を個別に合わせる。
+    const scaleX = targetHoleWidth / Math.max(1, hole.width) * configuredScale;
+    const scaleY = targetHoleHeight / Math.max(1, hole.height) * configuredScale;
+    stampWidth = stamp.width * scaleX;
+    stampHeight = stamp.height * scaleY;
+    holeOffsetX = (hole.centerX - stamp.width / 2) * scaleX;
+    holeOffsetY = (hole.centerY - stamp.height / 2) * scaleY;
+  } else {
+    const automaticScale = Math.max(
+      targetHoleWidth / Math.max(1, hole.width),
+      targetHoleHeight / Math.max(1, hole.height)
+    );
+    const finalScale = automaticScale * configuredScale;
+    stampWidth = stamp.width * finalScale;
+    stampHeight = stamp.height * finalScale;
+    holeOffsetX = (hole.centerX - stamp.width / 2) * finalScale;
+    holeOffsetY = (hole.centerY - stamp.height / 2) * finalScale;
+  }
   const adjustmentScale = placement.faceWidth / FACE_OFFSET_REFERENCE_WIDTH;
 
   push();
@@ -409,11 +428,15 @@ function resolveFacePlacement(face, frame) {
 
   // 目・口・頬の3本の軸から顔の傾きを求める。
   // 180度反転を同じ軸として扱うため、端末の左右反転にも影響されない。
-  const angle = normalizeFaceRoll(averageAxisAngle([
+  const landmarkAngle = normalizeFaceRoll(averageAxisAngle([
     lineAngle(leftCheek, rightCheek),
     lineAngle(leftEye, rightEye),
     lineAngle(leftMouth, rightMouth)
   ]));
+  const matrixRoll = Number(face?._pose?.roll);
+  const angle = USE_MEDIAPIPE_TRACKER && Number.isFinite(matrixRoll)
+    ? normalizeFaceRoll(matrixRoll * Math.PI / 180)
+    : landmarkAngle;
   const rawPlacement = {
     // 組み込みエフェクトの既存オフセットは鼻を基準に調整されている。
     // 顔幅だけは左右の頬234・454から求め、配置中心は鼻1を使う。
@@ -536,7 +559,7 @@ function drawFaceMeshDebug(frame) {
 
   noStroke();
   fill(0, 0, 0, 180);
-  rect(8, 72, Math.min(width - 16, 360), 186, 8);
+  rect(8, 72, Math.min(width - 16, 360), 202, 8);
   fill(255);
   textSize(12);
   textAlign(LEFT, TOP);
@@ -549,6 +572,7 @@ function drawFaceMeshDebug(frame) {
   const activeConfig = draftConfig || assetList[currentIndex];
   text([
     `build: ${APP_BUILD}`,
+    `tracker: ${TRACKER_MODE}`,
     `FaceMesh基準: ${basis}`,
     `観測 max(x,y): ${range}`,
     `入力: ${frame.sourceWidth} x ${frame.sourceHeight}`,
@@ -681,9 +705,17 @@ function initializeFaceMesh() {
     modelLoading = false;
     modelReady = false;
     faceMesh = null;
-    console.error("FaceMesh initialization failed", error);
+    console.error(`${TRACKER_MODE} face tracker initialization failed`, error);
     showFaceMeshError("顔認識を読み込めませんでした");
   };
+
+  if (USE_MEDIAPIPE_TRACKER) {
+    import("./mediapipe-tracker.js?v=20261102-mediapipe-ab")
+      .then(({ createMediaPipeFaceTracker }) => createMediaPipeFaceTracker({ maxFaces: 5 }))
+      .then(finishLoading)
+      .catch(failLoading);
+    return;
+  }
 
   try {
     const createdModel = ml5.faceMesh({
@@ -1533,6 +1565,9 @@ function cleanup() {
   document.removeEventListener("keydown", handleGlobalKeydown);
   stopRecordingTracks();
   stopFaceDetection();
+  try { faceMesh?.close?.(); } catch {}
+  faceMesh = null;
+  modelReady = false;
   stopCameraTracks();
   revokeDraftUrl();
   for (const id of assetPreviewUrls.keys()) revokeAssetPreviewUrl(id);

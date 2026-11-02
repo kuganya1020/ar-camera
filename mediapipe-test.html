@@ -30,7 +30,7 @@
 <body>
   <main>
     <h1>MediaPipe 3D顔追跡テスト</h1>
-    <p>顔をゆっくり前後左右へ向けて、緑の点が追従するか確認します。</p>
+    <p>ぶたフレームが、顔の左右・上下・傾きに追従するか確認します。</p>
     <div class="stage" id="stage">
       <video id="video" playsinline muted></video>
       <canvas id="overlay"></canvas>
@@ -39,6 +39,7 @@
       <div class="row"><span>状態</span><strong id="status">開始待ち</strong></div>
       <div class="row"><span>検出した顔</span><strong id="face-count">0</strong></div>
       <div class="row"><span>3D変換行列</span><strong id="matrix-status">未確認</strong></div>
+      <div class="row"><span>PNG追従</span><strong id="effect-status">準備中</strong></div>
       <div class="row"><span>Yaw（左右）</span><strong id="yaw">—</strong></div>
       <div class="row"><span>Pitch（上下）</span><strong id="pitch">—</strong></div>
       <div class="row"><span>Roll（傾き）</span><strong id="roll">—</strong></div>
@@ -61,6 +62,7 @@
     const status = document.getElementById("status");
     const faceCount = document.getElementById("face-count");
     const matrixStatus = document.getElementById("matrix-status");
+    const effectStatus = document.getElementById("effect-status");
     const yawOutput = document.getElementById("yaw");
     const pitchOutput = document.getElementById("pitch");
     const rollOutput = document.getElementById("roll");
@@ -73,6 +75,9 @@
     let smoothedPose = null;
     let previousRawPose = null;
     const poseDeltas = [];
+    const pigImage = new Image();
+    pigImage.src = "mimi.png?v=20261102-mediapipe-test";
+    let pigHole = null;
 
     function setStatus(message, type = "") {
       status.textContent = message;
@@ -107,14 +112,145 @@
       }
     }
 
-    function drawLandmarks(landmarks) {
+    function pointToStage(point) {
+      const bounds = canvas.getBoundingClientRect();
+      const sourceWidth = video.videoWidth || bounds.width;
+      const sourceHeight = video.videoHeight || bounds.height;
+      const scale = Math.max(bounds.width / sourceWidth, bounds.height / sourceHeight);
+      const renderedWidth = sourceWidth * scale;
+      const renderedHeight = sourceHeight * scale;
+      const offsetX = (bounds.width - renderedWidth) / 2;
+      const offsetY = (bounds.height - renderedHeight) / 2;
+      return {
+        x: bounds.width - (offsetX + point.x * renderedWidth),
+        y: offsetY + point.y * renderedHeight
+      };
+    }
+
+    function findTransparentHole(image) {
+      const sample = document.createElement("canvas");
+      sample.width = image.naturalWidth;
+      sample.height = image.naturalHeight;
+      const sampleContext = sample.getContext("2d", { willReadFrequently: true });
+      sampleContext.drawImage(image, 0, 0);
+      const pixels = sampleContext.getImageData(0, 0, sample.width, sample.height).data;
+      const pixelCount = sample.width * sample.height;
+      const visited = new Uint8Array(pixelCount);
+      const queue = new Int32Array(pixelCount);
+      const transparent = (index) => pixels[index * 4 + 3] < 24;
+      let head = 0;
+      let tail = 0;
+      const enqueueOutside = (index) => {
+        if (index < 0 || index >= pixelCount || visited[index] || !transparent(index)) return;
+        visited[index] = 1;
+        queue[tail++] = index;
+      };
+      for (let x = 0; x < sample.width; x += 1) {
+        enqueueOutside(x);
+        enqueueOutside((sample.height - 1) * sample.width + x);
+      }
+      for (let y = 0; y < sample.height; y += 1) {
+        enqueueOutside(y * sample.width);
+        enqueueOutside(y * sample.width + sample.width - 1);
+      }
+      while (head < tail) {
+        const index = queue[head++];
+        const x = index % sample.width;
+        const y = Math.floor(index / sample.width);
+        if (x > 0) enqueueOutside(index - 1);
+        if (x + 1 < sample.width) enqueueOutside(index + 1);
+        if (y > 0) enqueueOutside(index - sample.width);
+        if (y + 1 < sample.height) enqueueOutside(index + sample.width);
+      }
+
+      let best = null;
+      const enqueueHole = (index) => {
+        if (index < 0 || index >= pixelCount || visited[index] || !transparent(index)) return;
+        visited[index] = 2;
+        queue[tail++] = index;
+      };
+      for (let start = 0; start < pixelCount; start += 1) {
+        if (visited[start] || !transparent(start)) continue;
+        head = 0;
+        tail = 0;
+        visited[start] = 2;
+        queue[tail++] = start;
+        let count = 0;
+        let minX = sample.width;
+        let minY = sample.height;
+        let maxX = -1;
+        let maxY = -1;
+        while (head < tail) {
+          const index = queue[head++];
+          const x = index % sample.width;
+          const y = Math.floor(index / sample.width);
+          count += 1;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x);
+          maxY = Math.max(maxY, y);
+          if (x > 0) enqueueHole(index - 1);
+          if (x + 1 < sample.width) enqueueHole(index + 1);
+          if (y > 0) enqueueHole(index - sample.width);
+          if (y + 1 < sample.height) enqueueHole(index + sample.width);
+        }
+        if (!best || count > best.count) best = { count, minX, minY, maxX, maxY };
+      }
+      if (!best || best.count < pixelCount * .01) return null;
+      return {
+        width: best.maxX - best.minX + 1,
+        height: best.maxY - best.minY + 1,
+        centerX: (best.minX + best.maxX) / 2,
+        centerY: (best.minY + best.maxY) / 2
+      };
+    }
+
+    function drawFaceEffect(landmarks, pose) {
+      if (!landmarks || !pose || !pigHole || !pigImage.complete) return false;
+      const forehead = pointToStage(landmarks[10]);
+      const chin = pointToStage(landmarks[152]);
+      const cheekA = pointToStage(landmarks[234]);
+      const cheekB = pointToStage(landmarks[454]);
+      const faceWidth = Math.hypot(cheekB.x - cheekA.x, cheekB.y - cheekA.y);
+      const faceHeight = Math.hypot(chin.x - forehead.x, chin.y - forehead.y);
+      const centerX = (cheekA.x + cheekB.x + forehead.x + chin.x) / 4;
+      const centerY = (forehead.y + chin.y) / 2;
+      const holeTargetWidth = faceWidth * 1.08;
+      const holeTargetHeight = faceHeight * 1.06;
+      const scaleX = holeTargetWidth / Math.max(1, pigHole.width);
+      const scaleY = holeTargetHeight / Math.max(1, pigHole.height);
+      const drawWidth = pigImage.naturalWidth * scaleX;
+      const drawHeight = pigImage.naturalHeight * scaleY;
+      const holeOffsetX = (pigHole.centerX - pigImage.naturalWidth / 2) * scaleX;
+      const holeOffsetY = (pigHole.centerY - pigImage.naturalHeight / 2) * scaleY;
+
+      context.save();
+      context.translate(centerX, centerY);
+      context.rotate(pose.roll * Math.PI / 180);
+      context.globalAlpha = .96;
+      context.drawImage(
+        pigImage,
+        -drawWidth / 2 - holeOffsetX,
+        -drawHeight / 2 - holeOffsetY,
+        drawWidth,
+        drawHeight
+      );
+      context.restore();
+      return true;
+    }
+
+    function drawOverlay(landmarks, pose) {
       const bounds = canvas.getBoundingClientRect();
       context.clearRect(0, 0, bounds.width, bounds.height);
+      const effectDrawn = drawFaceEffect(landmarks, pose);
+      effectStatus.textContent = effectDrawn ? "追従中" : "顔を待っています";
+      effectStatus.className = effectDrawn ? "ok" : "";
       if (!landmarks) return;
       context.fillStyle = "#62f5a2";
       for (const point of landmarks) {
+        const mapped = pointToStage(point);
         context.beginPath();
-        context.arc((1 - point.x) * bounds.width, point.y * bounds.height, 1.4, 0, Math.PI * 2);
+        context.arc(mapped.x, mapped.y, 1.25, 0, Math.PI * 2);
         context.fill();
       }
     }
@@ -165,7 +301,7 @@
         smoothedPose = null;
         previousRawPose = null;
         poseDeltas.length = 0;
-        return;
+        return null;
       }
 
       if (previousRawPose) {
@@ -193,6 +329,7 @@
       rollOutput.textContent = `${smoothedPose.roll >= 0 ? "+" : ""}${smoothedPose.roll.toFixed(1)}°`;
       depthOutput.textContent = smoothedPose.depth.toFixed(2);
       jitterOutput.textContent = `${averageJitter.toFixed(2)}°/frame`;
+      return smoothedPose;
     }
 
     function predict() {
@@ -207,8 +344,8 @@
         matrixStatus.textContent = matrices.length ? "取得できています" : "取得なし";
         matrixStatus.className = matrices.length ? "ok" : "error";
         latency.textContent = `${Math.round(performance.now() - startedAt)} ms`;
-        drawLandmarks(faces[0]);
-        updatePoseReadout(matrices[0]);
+        const pose = updatePoseReadout(matrices[0]);
+        drawOverlay(faces[0], pose);
       }
       requestAnimationFrame(predict);
     }
@@ -217,6 +354,11 @@
       startButton.disabled = true;
       setStatus("モデルを準備中");
       try {
+        await pigImage.decode();
+        pigHole ||= findTransparentHole(pigImage);
+        if (!pigHole) throw new Error("ぶた画像の透明な顔穴を検出できませんでした");
+        effectStatus.textContent = "準備完了";
+        effectStatus.className = "ok";
         landmarker ||= await createLandmarker();
         setStatus("カメラを準備中");
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });

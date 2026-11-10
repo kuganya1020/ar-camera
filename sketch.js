@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261110-frame-yfix";
+const APP_BUILD = "20261110-frame-width-fit";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -203,11 +203,11 @@ function draw() {
   }
 
   if (config.point === "bg") {
-    // 専用比率を持つフレームは画面全体を覆い、それ以外は従来どおり全体を収める。
+    // 専用比率を持つ縦フレームは画面の横幅へ合わせ、それ以外は従来どおり全体を収める。
     const frameVariant = chooseFrameVariant(config);
-    const usePortraitFrameCover = frameVariant && height >= width;
-    const fitScale = usePortraitFrameCover
-      ? Math.max(width / stamp.width, height / stamp.height)
+    const usePortraitFrameWidthFit = frameVariant && height >= width;
+    const fitScale = usePortraitFrameWidthFit
+      ? width / stamp.width
       : Math.min(width / stamp.width, height / stamp.height);
     const backgroundScale = fitScale * clamp(config.scale, .2, 6);
     const drawWidth = stamp.width * backgroundScale;

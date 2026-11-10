@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261102-mediapipe-aspect";
+const APP_BUILD = "20261110-mediapipe-default";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -18,8 +18,9 @@ const MAX_UPLOAD_PIXELS = 1600000;
 const FACE_OFFSET_REFERENCE_WIDTH = 100;
 const URL_PARAMS = new URLSearchParams(location.search);
 const DEBUG_FACE_MESH = URL_PARAMS.get("debug") === "1";
-const TRACKER_MODE = URL_PARAMS.get("tracker") === "mediapipe" ? "mediapipe" : "ml5";
-const USE_MEDIAPIPE_TRACKER = TRACKER_MODE === "mediapipe";
+// MediaPipeを標準にし、問題の切り分け用URL「?tracker=ml5」だけ従来方式へ戻す。
+let TRACKER_MODE = URL_PARAMS.get("tracker") === "ml5" ? "ml5" : "mediapipe";
+let USE_MEDIAPIPE_TRACKER = TRACKER_MODE === "mediapipe";
 const PLATFORM_KEY = "arCameraPlatformV1";
 const SAVED_PLATFORM = readSavedPlatform();
 const AUTO_PLATFORM = /Android/i.test(navigator.userAgent) ? "android" : "ios";
@@ -709,29 +710,38 @@ function initializeFaceMesh() {
     showFaceMeshError("顔認識を読み込めませんでした");
   };
 
+  const loadMl5Fallback = () => {
+    try {
+      const createdModel = ml5.faceMesh({
+        maxFaces: 5,
+        flipHorizontal: false,
+        callback: finishLoading
+      });
+      faceMesh = createdModel;
+      if (createdModel?.ready?.then) {
+        createdModel.ready.then(() => finishLoading(createdModel)).catch(failLoading);
+      } else if (createdModel?.then) {
+        createdModel.then(finishLoading).catch(failLoading);
+      }
+    } catch (error) {
+      failLoading(error);
+    }
+  };
+
   if (USE_MEDIAPIPE_TRACKER) {
-    import("./mediapipe-tracker.js?v=20261102-mediapipe-ab")
+    import("./mediapipe-tracker.js?v=20261110-mediapipe-default")
       .then(({ createMediaPipeFaceTracker }) => createMediaPipeFaceTracker({ maxFaces: 5 }))
       .then(finishLoading)
-      .catch(failLoading);
+      .catch((error) => {
+        console.warn("MediaPipeを開始できないためml5へ切り替えます", error);
+        TRACKER_MODE = "ml5";
+        USE_MEDIAPIPE_TRACKER = false;
+        loadMl5Fallback();
+      });
     return;
   }
 
-  try {
-    const createdModel = ml5.faceMesh({
-      maxFaces: 5,
-      flipHorizontal: false,
-      callback: finishLoading
-    });
-    faceMesh = createdModel;
-    if (createdModel?.ready?.then) {
-      createdModel.ready.then(() => finishLoading(createdModel)).catch(failLoading);
-    } else if (createdModel?.then) {
-      createdModel.then(finishLoading).catch(failLoading);
-    }
-  } catch (error) {
-    failLoading(error);
-  }
+  loadMl5Fallback();
 }
 
 function beginFaceDetection() {

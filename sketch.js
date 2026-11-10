@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261110-responsive-frames";
+const APP_BUILD = "20261110-frame-yfix";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -213,7 +213,8 @@ function draw() {
     const drawWidth = stamp.width * backgroundScale;
     const drawHeight = stamp.height * backgroundScale;
     const centerX = width / 2 + numberOrZero(config.xOff) * (width / 480);
-    const centerY = height / 2 + numberOrZero(config.yOff) * (width / 480);
+    const frameVerticalCorrection = frameVariant ? -height * .01 : 0;
+    const centerY = height / 2 + numberOrZero(config.yOff) * (width / 480) + frameVerticalCorrection;
     imageMode(CENTER);
     image(
       stamp,

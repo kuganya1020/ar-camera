@@ -1,12 +1,56 @@
 "use strict";
 
-const APP_BUILD = "20261110-mediapipe-default";
+const APP_BUILD = "20261110-responsive-frames";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
   { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
   { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
-  { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 }
+  { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
+  {
+    id: "museum-frame",
+    name: "遺跡フレーム",
+    fileName: "museum-frame-3x4.png",
+    point: "bg",
+    scale: 1,
+    xOff: 0,
+    yOff: 0,
+    dateOverlay: true,
+    frameVariants: {
+      phone: {
+        fileName: "museum-frame-9x16.png",
+        aspect: 9 / 16,
+        date: { yearX: .523, monthX: .617, dayX: .692, y: .983, fontSize: .0125 }
+      },
+      tablet: {
+        fileName: "museum-frame-3x4.png",
+        aspect: 3 / 4,
+        date: { yearX: .528, monthX: .617, dayX: .692, y: .982, fontSize: .019 }
+      }
+    }
+  },
+  {
+    id: "museum-pottery-frame",
+    name: "土器フレーム",
+    fileName: "museum-pottery-3x4.png",
+    point: "bg",
+    scale: 1,
+    xOff: 0,
+    yOff: 0,
+    dateOverlay: true,
+    frameVariants: {
+      phone: {
+        fileName: "museum-pottery-9x16.png",
+        aspect: 9 / 16,
+        date: { yearX: .523, monthX: .617, dayX: .692, y: .983, fontSize: .0125 }
+      },
+      tablet: {
+        fileName: "museum-pottery-3x4.png",
+        aspect: 3 / 4,
+        date: { yearX: .528, monthX: .617, dayX: .692, y: .982, fontSize: .019 }
+      }
+    }
+  }
 ];
 
 const STORAGE_KEY = "arCameraAssetsV7";
@@ -72,6 +116,7 @@ let draftObjectUrl = "";
 let toastTimer;
 let loaderHideTimer;
 let longPressTimer;
+let effectsCollapseTimer;
 let dbPromise;
 const activePointers = new Map();
 let pinchOrigin = null;
@@ -86,8 +131,9 @@ const facePlacementStates = new Map();
 
 function preload() {
   for (const asset of DEFAULT_ASSETS) {
-    if (asset.fileName) {
-      images.set(asset.id, loadImage(asset.fileName, undefined, () => {
+    const source = chooseFrameVariant(asset, true)?.fileName || asset.fileName;
+    if (source) {
+      images.set(asset.id, loadImage(source, undefined, () => {
         images.delete(asset.id);
       }));
     }
@@ -127,6 +173,7 @@ function setup() {
     // カメラ準備とモデルのダウンロードを並行し、顔認識開始までの待ち時間を短縮する。
     initializeFaceMesh();
     startCamera("user");
+    scheduleEffectsAutoCollapse(6500);
   } else {
     hideLoaderImmediately();
     openPlatformSelector(false);
@@ -156,19 +203,34 @@ function draw() {
   }
 
   if (config.point === "bg") {
-    // 背景・フレーム画像はCanvasの幅と高さの両方に収める。
-    // iPadなど縦横比が異なる端末でも、scale=1なら画像全体が欠けない。
-    const fitScale = Math.min(width / stamp.width, height / stamp.height);
+    // 専用比率を持つフレームは画面全体を覆い、それ以外は従来どおり全体を収める。
+    const frameVariant = chooseFrameVariant(config);
+    const usePortraitFrameCover = frameVariant && height >= width;
+    const fitScale = usePortraitFrameCover
+      ? Math.max(width / stamp.width, height / stamp.height)
+      : Math.min(width / stamp.width, height / stamp.height);
     const backgroundScale = fitScale * clamp(config.scale, .2, 6);
+    const drawWidth = stamp.width * backgroundScale;
+    const drawHeight = stamp.height * backgroundScale;
+    const centerX = width / 2 + numberOrZero(config.xOff) * (width / 480);
+    const centerY = height / 2 + numberOrZero(config.yOff) * (width / 480);
     imageMode(CENTER);
     image(
       stamp,
-      width / 2 + numberOrZero(config.xOff) * (width / 480),
-      height / 2 + numberOrZero(config.yOff) * (width / 480),
-      stamp.width * backgroundScale,
-      stamp.height * backgroundScale
+      centerX,
+      centerY,
+      drawWidth,
+      drawHeight
     );
     imageMode(CORNER);
+    if (config.dateOverlay && frameVariant?.date) {
+      drawAutomaticFrameDate({
+        x: centerX - drawWidth / 2,
+        y: centerY - drawHeight / 2,
+        width: drawWidth,
+        height: drawHeight
+      }, frameVariant.date);
+    }
     if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
     return;
   }
@@ -200,6 +262,37 @@ function draw() {
     pop();
   }
   if (DEBUG_FACE_MESH) drawFaceMeshDebug(frame);
+}
+
+function chooseFrameVariant(asset, useBrowserViewport = false) {
+  if (!asset?.frameVariants) return null;
+  const canvasReady = !useBrowserViewport && typeof width === "number" && width > 100 &&
+    typeof height === "number" && height > 100;
+  const viewportWidth = Math.max(1, canvasReady ? width : window.innerWidth);
+  const viewportHeight = Math.max(1, canvasReady ? height : window.innerHeight);
+  const shortLongRatio = Math.min(viewportWidth, viewportHeight) / Math.max(viewportWidth, viewportHeight);
+  const candidates = Object.values(asset.frameVariants);
+  return candidates.reduce((best, candidate) => (
+    Math.abs(candidate.aspect - shortLongRatio) < Math.abs(best.aspect - shortLongRatio)
+      ? candidate
+      : best
+  ), candidates[0]);
+}
+
+function drawAutomaticFrameDate(layout, dateLayout) {
+  const today = new Date();
+  push();
+  noStroke();
+  fill(25);
+  textAlign(CENTER, CENTER);
+  textStyle(NORMAL);
+  textFont("sans-serif");
+  textSize(layout.height * dateLayout.fontSize);
+  const dateY = layout.y + layout.height * dateLayout.y;
+  text(String(today.getFullYear()), layout.x + layout.width * dateLayout.yearX, dateY);
+  text(String(today.getMonth() + 1), layout.x + layout.width * dateLayout.monthX, dateY);
+  text(String(today.getDate()), layout.x + layout.width * dateLayout.dayX, dateY);
+  pop();
 }
 
 function getCameraFrame() {
@@ -894,6 +987,14 @@ function bindUI() {
     await startCamera(isFrontCamera ? "user" : "environment");
   });
   byId("open-settings-btn").addEventListener("click", openAddSheet);
+  byId("effects-toggle-btn").addEventListener("click", () => {
+    const willCollapse = !document.body.classList.contains("effects-collapsed");
+    setEffectsCollapsed(willCollapse);
+    if (!willCollapse) scheduleEffectsAutoCollapse(6500);
+  });
+  byId("icon-list").addEventListener("pointerdown", cancelEffectsAutoCollapse);
+  byId("icon-list").addEventListener("pointerup", () => scheduleEffectsAutoCollapse(2800));
+  byId("icon-list").addEventListener("pointercancel", () => scheduleEffectsAutoCollapse(2800));
   byId("edit-selected-btn").addEventListener("click", () => {
     if (currentIndex > 0 && assetList[currentIndex]?.custom) openEditSheet(currentIndex);
   });
@@ -1049,6 +1150,29 @@ function createIconList() {
   byId("edit-selected-btn").hidden = !selected?.custom;
 }
 
+function setEffectsCollapsed(collapsed) {
+  const sheetOpen = !byId("settings-panel").hidden || !byId("adjustment-mode").hidden;
+  const shouldCollapse = Boolean(collapsed && !sheetOpen);
+  document.body.classList.toggle("effects-collapsed", shouldCollapse);
+  const toggle = byId("effects-toggle-btn");
+  toggle.setAttribute("aria-expanded", String(!shouldCollapse));
+  toggle.setAttribute("aria-label", shouldCollapse ? "エフェクト一覧を開く" : "エフェクト一覧を閉じる");
+}
+
+function cancelEffectsAutoCollapse() {
+  window.clearTimeout(effectsCollapseTimer);
+  effectsCollapseTimer = null;
+}
+
+function scheduleEffectsAutoCollapse(delay = 2800) {
+  cancelEffectsAutoCollapse();
+  effectsCollapseTimer = window.setTimeout(() => {
+    effectsCollapseTimer = null;
+    if (document.hidden || !byId("settings-panel").hidden || !byId("adjustment-mode").hidden) return;
+    setEffectsCollapsed(true);
+  }, delay);
+}
+
 function selectEffect(index) {
   if (index < 0 || index >= assetList.length) index = 0;
   if (
@@ -1064,6 +1188,7 @@ function selectEffect(index) {
   draftConfig = null;
   draftImage = null;
   createIconList();
+  scheduleEffectsAutoCollapse();
   const selected = assetList[currentIndex];
   if (selected?.point === "face" && !faces.length) {
     setStatus("顔を認識中");
@@ -1074,6 +1199,8 @@ function selectEffect(index) {
 }
 
 function openAddSheet() {
+  cancelEffectsAutoCollapse();
+  setEffectsCollapsed(false);
   editingIndex = -1;
   draftConfig = { id: createId(), name: "追加画像", point: "face", scale: 2.4, xOff: 0, yOff: 0, custom: true };
   draftImage = null;
@@ -1088,6 +1215,8 @@ function openAddSheet() {
 }
 
 function openEditSheet(index) {
+  cancelEffectsAutoCollapse();
+  setEffectsCollapsed(false);
   if (index <= 0 || index >= assetList.length) return;
   editingIndex = index;
   currentIndex = index;
@@ -1559,6 +1688,7 @@ function cleanup() {
   window.clearInterval(timerInterval);
   window.clearTimeout(toastTimer);
   window.clearTimeout(longPressTimer);
+  cancelEffectsAutoCollapse();
   window.clearInterval(detectionWatchdogTimer);
   detectionWatchdogTimer = null;
   if (canvasResizeFrame) cancelAnimationFrame(canvasResizeFrame);
@@ -1659,6 +1789,8 @@ function getAssetImage(asset) {
 
 function getAssetPreviewUrl(asset) {
   if (!asset || asset.point === "none") return "";
+  const frameVariant = chooseFrameVariant(asset);
+  if (frameVariant?.fileName) return frameVariant.fileName;
   if (asset.fileName) return asset.fileName;
   return assetPreviewUrls.get(asset.id) || images.get(asset.id)?.src || "";
 }

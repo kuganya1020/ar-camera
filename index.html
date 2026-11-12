@@ -8,10 +8,8 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="app_icon.png.optimized.png?v=20260802">
   <link rel="icon" type="image/png" href="app_icon.png.optimized.png?v=20260802">
-  <link rel="manifest" href="manifest.webmanifest?v=20260806">
+  <link rel="manifest" href="manifest.webmanifest?v=20261112-offline">
   <title>AR Camera</title>
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-  <link rel="preconnect" href="https://unpkg.com" crossorigin>
   <link rel="stylesheet" href="style.css?v=20261112-onboarding">
   <script>
     (() => {
@@ -27,9 +25,9 @@
       window.AR_CAMERA_BOOT_PLATFORM = platform;
     })();
   </script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
-  <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
-  <script defer src="sketch.js?v=20261112-weekday-nudge"></script>
+  <script defer src="vendor/p5.min.js?v=1.9.4" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
+  <script defer src="vendor/ml5.min.js?v=1.2.1" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
+  <script defer src="sketch.js?v=20261112-android-offline"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -223,6 +221,14 @@
         retry.addEventListener("click", () => location.reload(), { once: true });
       });
     })();
+  </script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js?v=20261112-android-offline")
+          .catch((error) => console.warn("オフライン準備に失敗しました", error));
+      });
+    }
   </script>
 </body>
 </html>

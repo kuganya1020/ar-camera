@@ -1,20 +1,24 @@
 import {
   FaceLandmarker,
   FilesetResolver
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.0";
+} from "./vendor/mediapipe/vision_bundle.mjs";
 
-const WASM_ROOT = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.0/wasm";
-const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const WASM_ROOT = new URL("./vendor/mediapipe/wasm", import.meta.url).href;
+const MODEL_URL = new URL("./vendor/mediapipe/face_landmarker.task", import.meta.url).href;
 
-export async function createMediaPipeFaceTracker({ maxFaces = 5 } = {}) {
+export async function createMediaPipeFaceTracker({ maxFaces = 5, preferCpu = false } = {}) {
   const vision = await FilesetResolver.forVisionTasks(WASM_ROOT);
   let landmarker;
 
-  try {
-    landmarker = await createLandmarker(vision, maxFaces, "GPU");
-  } catch (gpuError) {
-    console.warn("MediaPipe GPU initialization failed; using CPU.", gpuError);
+  if (preferCpu) {
     landmarker = await createLandmarker(vision, maxFaces, "CPU");
+  } else {
+    try {
+      landmarker = await createLandmarker(vision, maxFaces, "GPU");
+    } catch (gpuError) {
+      console.warn("MediaPipe GPU initialization failed; using CPU.", gpuError);
+      landmarker = await createLandmarker(vision, maxFaces, "CPU");
+    }
   }
 
   let active = false;
@@ -48,7 +52,9 @@ export async function createMediaPipeFaceTracker({ maxFaces = 5 } = {}) {
           lastVideoTime = video.currentTime;
           try {
             const result = landmarker.detectForVideo(video, performance.now());
-            if (active && currentGeneration === generation) callback(adaptResult(result));
+            if (active && currentGeneration === generation) {
+              callback(adaptResult(result));
+            }
           } catch (error) {
             console.warn("MediaPipe frame detection failed", error);
           }
@@ -71,7 +77,10 @@ export async function createMediaPipeFaceTracker({ maxFaces = 5 } = {}) {
 
 async function createLandmarker(vision, maxFaces, delegate) {
   return FaceLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: MODEL_URL, delegate },
+    baseOptions: {
+      modelAssetPath: MODEL_URL,
+      delegate
+    },
     runningMode: "VIDEO",
     numFaces: Math.max(1, Math.min(5, maxFaces)),
     minFaceDetectionConfidence: 0.45,
@@ -98,6 +107,8 @@ function adaptResult(result) {
 
 function matrixToPose(matrix) {
   if (!matrix || matrix.length < 16) return null;
+
+  // MediaPipeの4x4列優先行列からXYZ回転を取り出す。
   const m11 = matrix[0];
   const m12 = matrix[4];
   const m13 = matrix[8];

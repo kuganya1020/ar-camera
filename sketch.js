@@ -5,8 +5,6 @@ const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
   { id: "hat", name: "ぼうし", fileName: "hat.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
-  { id: "sunset", name: "夕焼け", fileName: "sunset.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
-  { id: "star", name: "星", fileName: "star.png", point: "bg", scale: 1, xOff: 0, yOff: 0 },
   {
     id: "museum-frame",
     name: "遺跡フレーム",
@@ -863,8 +861,12 @@ function initializeFaceMesh() {
   };
 
   if (USE_MEDIAPIPE_TRACKER) {
-    import("./mediapipe-tracker.js?v=20261110-mediapipe-default")
-      .then(({ createMediaPipeFaceTracker }) => createMediaPipeFaceTracker({ maxFaces: 5 }))
+    import("./mediapipe-tracker.js?v=20261112-android-offline")
+      .then(({ createMediaPipeFaceTracker }) => createMediaPipeFaceTracker({
+        maxFaces: 5,
+        // 非力な端末だけCPUを優先し、通常端末のGPU性能は維持する。
+        preferCpu: IS_LOW_SPEC_DEVICE
+      }))
       .then(finishLoading)
       .catch((error) => {
         console.warn("MediaPipeを開始できないためml5へ切り替えます", error);
@@ -985,7 +987,8 @@ async function getCameraConstraints(facingMode) {
   }
 
   if (target?.deviceId) {
-    return { ...baseVideo, deviceId: { exact: target.deviceId } };
+    // Androidではexact指定が機種依存で失敗しやすいため、希望値として渡す。
+    return { ...baseVideo, deviceId: { ideal: target.deviceId } };
   }
   return { ...baseVideo, facingMode: { ideal: facingMode } };
 }

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261112-ipad-date-layout";
+const APP_BUILD = "20261112-ipad-date-final";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -30,7 +30,7 @@ const DEFAULT_ASSETS = [
         orientation: "portrait",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .536, monthX: .625, dayX: .7, weekdayX: .786, y: .985, fontSize: .019 }
+        date: { yearX: .533, monthX: .622, dayX: .697, weekdayX: .783, y: .985, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-frame-4x3.png",
@@ -38,7 +38,7 @@ const DEFAULT_ASSETS = [
         orientation: "landscape",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .52, monthX: .606, dayX: .684, weekdayX: .774, y: .97, fontSize: .024 }
+        date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .97, fontSize: .03 }
       }
     }
   },
@@ -65,7 +65,7 @@ const DEFAULT_ASSETS = [
         orientation: "portrait",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .536, monthX: .625, dayX: .7, weekdayX: .786, y: .985, fontSize: .019 }
+        date: { yearX: .533, monthX: .622, dayX: .697, weekdayX: .783, y: .985, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-pottery-4x3.png",
@@ -73,7 +73,7 @@ const DEFAULT_ASSETS = [
         orientation: "landscape",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .52, monthX: .606, dayX: .684, weekdayX: .774, y: .97, fontSize: .024 }
+        date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .97, fontSize: .03 }
       }
     }
   }

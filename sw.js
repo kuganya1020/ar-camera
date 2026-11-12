@@ -1,4 +1,4 @@
-const CACHE_NAME = "ar-camera-offline-20261112-v1";
+const CACHE_NAME = "ar-camera-offline-20261112-v9";
 
 const APP_FILES = [
   "./",

@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261112-weekday-nudge";
+const APP_BUILD = "20261112-error-recovery";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -78,6 +78,7 @@ const DEFAULT_ASSETS = [
 ];
 
 const STORAGE_KEY = "arCameraAssetsV7";
+const EFFECT_UI_KEY = "arCameraEffectUiV1";
 const LEGACY_KEY = "myARCameraData_V6";
 const DB_NAME = "ar-camera-images";
 const DB_STORE = "images";
@@ -94,9 +95,12 @@ const SAVED_PLATFORM = readSavedPlatform();
 const AUTO_PLATFORM = /Android/i.test(navigator.userAgent) ? "android" : "ios";
 const DEVICE_MEMORY_GB = Number(navigator.deviceMemory) || 0;
 const CPU_CORES = Number(navigator.hardwareConcurrency) || 0;
+const FORCE_LIGHT_MODE = URL_PARAMS.get("light") === "1" || (() => {
+  try { return sessionStorage.getItem("arCameraForceLightV1") === "1"; } catch { return false; }
+})();
 // OSの種類と端末性能は別物として扱う。Androidを選んだだけでは軽量化しない。
 // 非常に少ないメモリ/CPU、または両方が控えめな端末だけを軽量モードにする。
-const IS_LOW_SPEC_DEVICE =
+const IS_LOW_SPEC_DEVICE = FORCE_LIGHT_MODE ||
   (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 2) ||
   (CPU_CORES > 0 && CPU_CORES <= 2) ||
   (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4 &&
@@ -112,6 +116,8 @@ let images = new Map();
 const effectGeometryCache = new WeakMap();
 const assetPreviewUrls = new Map();
 let currentIndex = 1;
+let managedEffectId = "";
+let effectUiPreferences = readEffectUiPreferences();
 let currentMode = "photo";
 let isFrontCamera = true;
 let isRecording = false;
@@ -124,6 +130,10 @@ let recordingFailed = false;
 let detectionSession = 0;
 let faceDetectionActive = false;
 let lastFaceResultAt = 0;
+let lastFaceSeenAt = 0;
+let hasDetectedFace = false;
+let readyStatusUntil = 0;
+let statusHideTimer = null;
 let detectionWatchdogTimer = null;
 let detectionRestarting = false;
 let modelReady = false;
@@ -720,13 +730,18 @@ function drawFaceMeshDebug(frame) {
 async function startCamera(facingMode) {
   if (isRecording) return false;
   const generation = ++cameraStartGeneration;
-  setCameraSwitchBusy(true);
+  const switchingCamera = cameraReady && Boolean(video);
+  setCameraSwitchBusy(true, switchingCamera);
   cameraReady = false;
   faces = [];
   faceCoordinateSpace = null;
   observedFaceRange = null;
-  setStatus("カメラを準備中");
-  showLoader("カメラを準備中");
+  resetFaceRecognitionStatus();
+  const cameraMessage = switchingCamera
+    ? "カメラを切り替えています"
+    : "カメラを起動しています";
+  setStatus(cameraMessage);
+  showLoader(cameraMessage);
   stopFaceDetection();
   stopCameraTracks();
 
@@ -773,7 +788,7 @@ async function startCamera(facingMode) {
       setCameraSwitchBusy(false);
       hideLoader();
       scheduleFirstRunOnboarding();
-      setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
+      setStatus(modelReady ? "顔を画面に入れてください" : "顔認識を準備しています");
       if (modelReady) beginFaceDetection();
       else initializeFaceMesh();
     };
@@ -802,19 +817,23 @@ async function startCamera(facingMode) {
   } catch (error) {
     if (generation === cameraStartGeneration) {
       const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
-      showCameraError(denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした");
+      showCameraError(
+        denied ? "カメラの使用が許可されていません" : "カメラを開始できませんでした",
+        denied ? "permission" : "camera"
+      );
       setCameraSwitchBusy(false);
     }
     return false;
   }
 }
 
-function setCameraSwitchBusy(busy) {
+function setCameraSwitchBusy(busy, animate = false) {
   cameraSwitchInProgress = busy;
   const button = byId("switch-camera-btn");
   if (!button) return;
   button.disabled = busy;
   button.setAttribute("aria-busy", String(busy));
+  button.dataset.switching = String(busy && animate);
 }
 
 function initializeFaceMesh() {
@@ -830,7 +849,7 @@ function initializeFaceMesh() {
     }
     modelReady = true;
     modelLoading = false;
-    setStatus("顔を認識中");
+    if (cameraReady) setStatus("顔を画面に入れてください");
     if (cameraReady && video && !faceDetectionActive) beginFaceDetection();
   };
 
@@ -897,16 +916,12 @@ function beginFaceDetection() {
         }
         inspectFaceCoordinateSpace(faces);
         if (!byId("settings-panel").hidden) syncEditorStatus();
-        if (faces.length) {
-          const status = byId("status-pill");
-          status.textContent = "準備完了";
-          status.style.opacity = "0";
-        }
+        updateFaceRecognitionStatus();
       }
     });
   } catch {
     faceDetectionActive = false;
-    setStatus("顔認識を開始できませんでした");
+    showFaceMeshError("顔認識を開始できませんでした");
   }
 }
 
@@ -959,7 +974,10 @@ function stabilizeFaces(results, previousFaces) {
 function checkFaceDetectionHealth() {
   if (!cameraReady || !faceDetectionActive || document.hidden || detectionRestarting) return;
   const resultAge = performance.now() - lastFaceResultAt;
-  if (resultAge > 1200) faces = [];
+  if (resultAge > 1200) {
+    faces = [];
+    updateFaceRecognitionStatus();
+  }
   if (resultAge <= 3000) return;
 
   detectionRestarting = true;
@@ -998,6 +1016,7 @@ function stopFaceDetection() {
   faces = [];
   facePlacementStates.clear();
   lastFaceResultAt = 0;
+  resetFaceRecognitionStatus();
   if (!faceDetectionActive) return;
   try {
     if (faceMesh?.detectStop) faceMesh.detectStop();
@@ -1022,6 +1041,9 @@ function stopCameraTracks() {
 
 function bindUI() {
   byId("loading-retry-btn").addEventListener("click", retryCameraOrModel);
+  byId("loading-permission-btn").addEventListener("click", checkCameraPermission);
+  byId("loading-light-btn").addEventListener("click", startLightMode);
+  byId("loading-help-btn").addEventListener("click", toggleRecoveryHelp);
   byId("mode-photo").addEventListener("click", () => switchMode("photo"));
   byId("mode-video").addEventListener("click", () => switchMode("video"));
   byId("main-shutter-btn").addEventListener("click", () => {
@@ -1046,9 +1068,22 @@ function bindUI() {
   byId("adjustment-cancel-btn").addEventListener("click", cancelSheet);
   byId("adjustment-save-btn").addEventListener("click", saveEffect);
   byId("fine-adjust-toggle").addEventListener("click", toggleFineAdjustControls);
+  document.querySelectorAll("[data-adjustment-help]").forEach((button) => {
+    button.addEventListener("click", () => {
+      showToast(button.dataset.adjustmentHelp === "position"
+        ? "プレビューを1本指で動かします"
+        : "プレビューを2本指で拡大・縮小します");
+    });
+  });
   byId("delete-btn").addEventListener("click", () => setModal("delete-dialog", true));
   byId("delete-cancel-btn").addEventListener("click", () => setModal("delete-dialog", false));
   byId("delete-confirm-btn").addEventListener("click", deleteEffect);
+  byId("effect-menu-close-btn").addEventListener("click", closeEffectMenu);
+  byId("effect-favorite-btn").addEventListener("click", toggleManagedFavorite);
+  byId("effect-move-left-btn").addEventListener("click", () => moveManagedEffect(-1));
+  byId("effect-move-right-btn").addEventListener("click", () => moveManagedEffect(1));
+  byId("effect-menu-edit-btn").addEventListener("click", editManagedEffect);
+  byId("effect-menu-delete-btn").addEventListener("click", confirmManagedEffectDelete);
   byId("help-btn").addEventListener("click", () => setModal("tutorial-overlay", true));
   byId("tutorial-close-btn").addEventListener("click", () => setModal("tutorial-overlay", false));
   byId("onboarding-start-btn").addEventListener("click", closeFirstRunOnboarding);
@@ -1177,6 +1212,7 @@ function createIconList() {
   list.replaceChildren();
   assetList.forEach((asset, index) => {
     const button = document.createElement("button");
+    let longPressOpened = false;
     button.type = "button";
     button.className = `filter-icon${index === currentIndex ? " active" : ""}`;
     button.setAttribute("role", "listitem");
@@ -1184,13 +1220,27 @@ function createIconList() {
     button.setAttribute("aria-pressed", String(index === currentIndex));
     button.title = asset.name || "エフェクト";
     button.dataset.empty = String(asset.point === "none");
+    button.dataset.favorite = String(effectUiPreferences.favorites.includes(asset.id));
+    if (button.dataset.favorite === "true") {
+      button.setAttribute("aria-label", `${asset.name || "エフェクト"}・お気に入りを選ぶ`);
+    }
     const imageUrl = getAssetPreviewUrl(asset);
     if (imageUrl) button.style.backgroundImage = `url("${imageUrl}")`;
 
-    button.addEventListener("click", () => selectEffect(index));
+    button.addEventListener("click", () => {
+      if (longPressOpened) {
+        longPressOpened = false;
+        return;
+      }
+      selectEffect(index);
+    });
     const beginLongPress = () => {
-      if (index === 0 || asset.builtIn) return;
-      longPressTimer = window.setTimeout(() => openEditSheet(index), 550);
+      if (index === 0) return;
+      longPressOpened = false;
+      longPressTimer = window.setTimeout(() => {
+        longPressOpened = true;
+        openEffectMenu(asset.id);
+      }, 550);
     };
     const cancelLongPress = () => window.clearTimeout(longPressTimer);
     button.addEventListener("pointerdown", beginLongPress);
@@ -1201,6 +1251,78 @@ function createIconList() {
   });
   const selected = assetList[currentIndex];
   byId("edit-selected-btn").hidden = !selected?.custom;
+}
+
+function openEffectMenu(assetId) {
+  const index = assetList.findIndex((asset) => asset.id === assetId);
+  if (index <= 0) return;
+  managedEffectId = assetId;
+  const asset = assetList[index];
+  const favorite = effectUiPreferences.favorites.includes(assetId);
+  const previous = assetList[index - 1];
+  const next = assetList[index + 1];
+  byId("effect-menu-title").textContent = asset.name || "エフェクトを管理";
+  byId("effect-favorite-btn").textContent = favorite
+    ? "お気に入りから外す"
+    : "お気に入りに追加";
+  byId("effect-move-left-btn").disabled = !previous || previous.id === "none" ||
+    effectUiPreferences.favorites.includes(previous.id) !== favorite;
+  byId("effect-move-right-btn").disabled = !next ||
+    effectUiPreferences.favorites.includes(next.id) !== favorite;
+  byId("effect-menu-edit-btn").hidden = !asset.custom;
+  byId("effect-menu-delete-btn").hidden = !asset.custom;
+  setModal("effect-menu", true);
+}
+
+function closeEffectMenu() {
+  setModal("effect-menu", false);
+  managedEffectId = "";
+}
+
+function toggleManagedFavorite() {
+  if (!managedEffectId) return;
+  const favorites = new Set(effectUiPreferences.favorites);
+  if (favorites.has(managedEffectId)) favorites.delete(managedEffectId);
+  else favorites.add(managedEffectId);
+  effectUiPreferences.favorites = [...favorites];
+  rememberCurrentEffectOrder();
+  applyEffectUiPreferences(false);
+  createIconList();
+  const effectId = managedEffectId;
+  closeEffectMenu();
+  showToast(effectUiPreferences.favorites.includes(effectId)
+    ? "お気に入りに追加しました"
+    : "お気に入りから外しました");
+}
+
+function moveManagedEffect(direction) {
+  const index = assetList.findIndex((asset) => asset.id === managedEffectId);
+  const targetIndex = index + direction;
+  if (index <= 0 || targetIndex <= 0 || targetIndex >= assetList.length) return;
+  const favorite = effectUiPreferences.favorites.includes(managedEffectId);
+  const targetFavorite = effectUiPreferences.favorites.includes(assetList[targetIndex].id);
+  if (favorite !== targetFavorite) return;
+  const selectedId = assetList[currentIndex]?.id;
+  [assetList[index], assetList[targetIndex]] = [assetList[targetIndex], assetList[index]];
+  currentIndex = Math.max(0, assetList.findIndex((asset) => asset.id === selectedId));
+  rememberCurrentEffectOrder();
+  createIconList();
+  openEffectMenu(managedEffectId);
+}
+
+function editManagedEffect() {
+  const index = assetList.findIndex((asset) => asset.id === managedEffectId);
+  if (index <= 0 || !assetList[index]?.custom) return;
+  closeEffectMenu();
+  openEditSheet(index);
+}
+
+function confirmManagedEffectDelete() {
+  const index = assetList.findIndex((asset) => asset.id === managedEffectId);
+  if (index <= 0 || !assetList[index]?.custom) return;
+  editingIndex = index;
+  setModal("effect-menu", false);
+  setModal("delete-dialog", true);
 }
 
 function selectEffect(index) {
@@ -1215,12 +1337,13 @@ function selectEffect(index) {
     return;
   }
   currentIndex = index;
+  markEffectUsed(assetList[currentIndex]?.id);
   draftConfig = null;
   draftImage = null;
   createIconList();
   const selected = assetList[currentIndex];
   if (selected?.point === "face" && !faces.length) {
-    setStatus("顔を認識中");
+    setStatus(hasDetectedFace ? "顔を見失いました" : "顔を画面に入れてください");
   } else {
     // 選択状態はアイコンの枠で伝わるため、エフェクト名の一時表示は行わない。
     byId("status-pill").style.opacity = "0";
@@ -1275,7 +1398,9 @@ function enterAdjustmentMode() {
   }
   setSheet(false);
   byId("fine-adjust-controls").hidden = true;
-  byId("fine-adjust-toggle").setAttribute("aria-expanded", "false");
+  const detailToggle = byId("fine-adjust-toggle");
+  detailToggle.setAttribute("aria-expanded", "false");
+  detailToggle.textContent = "詳細調整";
   byId("adjustment-mode").hidden = false;
   document.body.classList.add("adjustment-mode");
   syncEditorUI();
@@ -1285,7 +1410,9 @@ function toggleFineAdjustControls() {
   const controls = byId("fine-adjust-controls");
   const opening = controls.hidden;
   controls.hidden = !opening;
-  byId("fine-adjust-toggle").setAttribute("aria-expanded", String(opening));
+  const toggle = byId("fine-adjust-toggle");
+  toggle.setAttribute("aria-expanded", String(opening));
+  toggle.textContent = opening ? "詳細調整を閉じる" : "詳細調整";
 }
 
 function setSheet(open) {
@@ -1315,6 +1442,7 @@ function syncPlacementButtons() {
 function handleGlobalKeydown(event) {
   if (event.key !== "Escape") return;
   if (!byId("delete-dialog").hidden) return setModal("delete-dialog", false);
+  if (!byId("effect-menu").hidden) return closeEffectMenu();
   if (!byId("onboarding-overlay").hidden) return closeFirstRunOnboarding();
   if (!byId("tutorial-overlay").hidden) return setModal("tutorial-overlay", false);
   if (!byId("platform-overlay").hidden && !byId("platform-cancel-btn").hidden) {
@@ -1441,6 +1569,7 @@ async function saveEffect() {
     }
   }
   persistMetadata();
+  rememberCurrentEffectOrder();
   draftConfig = null;
   draftImage = null;
   editingIndex = -1;
@@ -1458,9 +1587,13 @@ async function deleteEffect() {
   images.delete(removed.id);
   revokeAssetPreviewUrl(removed.id);
   if (removed.custom) await idbDelete(removed.id);
+  effectUiPreferences.favorites = effectUiPreferences.favorites.filter((id) => id !== removed.id);
+  effectUiPreferences.recent = effectUiPreferences.recent.filter((id) => id !== removed.id);
   currentIndex = clamp(currentIndex, 0, Math.max(0, assetList.length - 1));
   if (currentIndex >= editingIndex) currentIndex = Math.max(0, currentIndex - 1);
   persistMetadata();
+  rememberCurrentEffectOrder();
+  managedEffectId = "";
   setModal("delete-dialog", false);
   cancelSheet();
   createIconList();
@@ -1475,7 +1608,13 @@ async function takePhoto() {
   byId("flash-overlay").classList.add("flash");
   const blob = await canvasToBlob(canvas, "image/jpeg", .97);
   if (!blob) return showToast("写真を保存できませんでした");
-  await shareOrDownload(blob, `ar-photo-${Date.now()}.jpg`, "image/jpeg", "AR写真");
+  await shareOrDownload(
+    blob,
+    `ar-photo-${Date.now()}.jpg`,
+    "image/jpeg",
+    "AR写真",
+    "写真に保存しました"
+  );
 }
 
 function toggleRecording() {
@@ -1566,7 +1705,13 @@ async function saveVideo() {
     return;
   }
   if (!blob.size) return showToast("動画を保存できませんでした");
-  await shareOrDownload(blob, `ar-video-${Date.now()}.${extension}`, type, "AR動画");
+  await shareOrDownload(
+    blob,
+    `ar-video-${Date.now()}.${extension}`,
+    type,
+    "AR動画",
+    "動画を保存しました"
+  );
   recordedChunks = [];
   mediaRecorder = null;
 }
@@ -1582,15 +1727,15 @@ function chooseRecordingMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
-async function shareOrDownload(blob, fileName, type, title) {
+async function shareOrDownload(blob, fileName, type, title, successMessage) {
   const file = new File([blob], fileName, { type });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });
-      showToast("共有しました");
-      return;
+      showToast(successMessage);
+      return true;
     } catch (error) {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError") return false;
     }
   }
   const url = URL.createObjectURL(blob);
@@ -1601,7 +1746,8 @@ async function shareOrDownload(blob, fileName, type, title) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast("端末に保存しました");
+  showToast(successMessage);
+  return true;
 }
 
 function bindCanvasGestures(canvas) {
@@ -1713,6 +1859,7 @@ function cleanup() {
   if (isRecording) stopRecording();
   window.clearInterval(timerInterval);
   window.clearTimeout(toastTimer);
+  window.clearTimeout(statusHideTimer);
   window.clearTimeout(longPressTimer);
   window.clearInterval(detectionWatchdogTimer);
   detectionWatchdogTimer = null;
@@ -1758,6 +1905,7 @@ async function loadStoredAssets() {
     assetList = DEFAULT_ASSETS.map((asset) => ({ ...asset, builtIn: true }));
     await migrateLegacyAssets();
   }
+  applyEffectUiPreferences(true);
   const customAssets = assetList.filter((item) => item.custom);
   await Promise.allSettled(customAssets.map(async (asset) => {
     const blob = await idbGet(asset.id);
@@ -1806,6 +1954,59 @@ function persistMetadata() {
     id, name, point, scale, xOff, yOff, mimeType, custom
   }));
   safeStorageSet(STORAGE_KEY, JSON.stringify(customAssets));
+}
+
+function readEffectUiPreferences() {
+  const saved = safeJsonParse(safeStorageGet(EFFECT_UI_KEY));
+  return {
+    favorites: Array.isArray(saved?.favorites) ? saved.favorites.filter(Boolean) : [],
+    order: Array.isArray(saved?.order) ? saved.order.filter(Boolean) : [],
+    recent: Array.isArray(saved?.recent) ? saved.recent.filter(Boolean).slice(0, 8) : []
+  };
+}
+
+function persistEffectUiPreferences() {
+  safeStorageSet(EFFECT_UI_KEY, JSON.stringify(effectUiPreferences));
+}
+
+function rememberCurrentEffectOrder() {
+  effectUiPreferences.order = assetList
+    .filter((asset) => asset.id !== "none")
+    .map((asset) => asset.id);
+  persistEffectUiPreferences();
+}
+
+function markEffectUsed(assetId) {
+  if (!assetId || assetId === "none") return;
+  effectUiPreferences.recent = [assetId]
+    .concat(effectUiPreferences.recent.filter((id) => id !== assetId))
+    .slice(0, 8);
+  persistEffectUiPreferences();
+}
+
+function applyEffectUiPreferences(promoteRecent) {
+  if (!assetList.length) return;
+  const selectedId = assetList[currentIndex]?.id;
+  const none = assetList.find((asset) => asset.id === "none");
+  const orderIndex = new Map(effectUiPreferences.order.map((id, index) => [id, index]));
+  const originalIndex = new Map(assetList.map((asset, index) => [asset.id, index]));
+  const favorites = new Set(effectUiPreferences.favorites);
+  const available = assetList.filter((asset) => asset.id !== "none");
+  available.sort((a, b) => {
+    const aOrder = orderIndex.has(a.id) ? orderIndex.get(a.id) : Number.MAX_SAFE_INTEGER;
+    const bOrder = orderIndex.has(b.id) ? orderIndex.get(b.id) : Number.MAX_SAFE_INTEGER;
+    return aOrder - bOrder || originalIndex.get(a.id) - originalIndex.get(b.id);
+  });
+
+  const favoriteAssets = available.filter((asset) => favorites.has(asset.id));
+  const normalAssets = available.filter((asset) => !favorites.has(asset.id));
+  if (promoteRecent) {
+    const recentId = effectUiPreferences.recent.find((id) => normalAssets.some((asset) => asset.id === id));
+    const recentIndex = normalAssets.findIndex((asset) => asset.id === recentId);
+    if (recentIndex > 0) normalAssets.unshift(normalAssets.splice(recentIndex, 1)[0]);
+  }
+  assetList = [none, ...favoriteAssets, ...normalAssets].filter(Boolean);
+  currentIndex = Math.max(0, assetList.findIndex((asset) => asset.id === selectedId));
 }
 
 function getAssetImage(asset) {
@@ -1897,18 +2098,60 @@ function setModal(id, open) {
 
 function setStatus(message) {
   const status = byId("status-pill");
-  status.textContent = message;
+  if (status.textContent !== message) status.textContent = message;
   status.style.opacity = "1";
+}
+
+function resetFaceRecognitionStatus() {
+  window.clearTimeout(statusHideTimer);
+  statusHideTimer = null;
+  lastFaceSeenAt = 0;
+  hasDetectedFace = false;
+  readyStatusUntil = 0;
+}
+
+function updateFaceRecognitionStatus() {
+  if (!cameraReady || !modelReady || !faceDetectionActive) return;
+  const now = performance.now();
+
+  if (faces.length) {
+    lastFaceSeenAt = now;
+    if (!hasDetectedFace) {
+      hasDetectedFace = true;
+      readyStatusUntil = now + 1000;
+      setStatus("準備完了");
+      window.clearTimeout(statusHideTimer);
+      statusHideTimer = window.setTimeout(() => {
+        readyStatusUntil = 0;
+        updateFaceRecognitionStatus();
+      }, 1000);
+      return;
+    }
+    if (now >= readyStatusUntil) byId("status-pill").style.opacity = "0";
+    return;
+  }
+
+  if (now < readyStatusUntil) return;
+  if (!hasDetectedFace) {
+    setStatus("顔を画面に入れてください");
+    return;
+  }
+
+  // 一瞬だけ検出が抜けても表示を点滅させない。
+  if (now - lastFaceSeenAt >= 700) setStatus("顔を見失いました");
 }
 
 function showLoader(message) {
   window.clearTimeout(loaderHideTimer);
   const loader = byId("loading-screen");
+  delete loader.dataset.errorKind;
   loader.hidden = false;
   loader.style.opacity = "1";
-  loader.querySelector("p").textContent = message;
+  byId("loading-message").textContent = message;
   loader.querySelector(".spinner").hidden = false;
-  byId("loading-retry-btn").hidden = true;
+  byId("loading-error-actions").hidden = true;
+  byId("loading-error-note").hidden = true;
+  byId("loading-help-btn").setAttribute("aria-expanded", "false");
 }
 
 function hideLoader() {
@@ -1918,20 +2161,29 @@ function hideLoader() {
   loaderHideTimer = window.setTimeout(() => { loader.hidden = true; }, 220);
 }
 
-function showCameraError(message) {
+function showCameraError(message, kind = "camera") {
   cameraReady = false;
-  showLoader(message);
-  const spinner = byId("loading-screen").querySelector(".spinner");
-  spinner.hidden = true;
-  byId("loading-retry-btn").hidden = false;
+  showRecoveryError(message, kind);
   setStatus(message);
 }
 
 function showFaceMeshError(message) {
-  showLoader(message);
-  byId("loading-screen").querySelector(".spinner").hidden = true;
-  byId("loading-retry-btn").hidden = false;
+  showRecoveryError(message, "model");
   setStatus(message);
+}
+
+function showRecoveryError(message, kind) {
+  const loader = byId("loading-screen");
+  window.clearTimeout(loaderHideTimer);
+  loader.hidden = false;
+  loader.style.opacity = "1";
+  loader.dataset.errorKind = kind;
+  byId("loading-message").textContent = message;
+  loader.querySelector(".spinner").hidden = true;
+  byId("loading-error-actions").hidden = false;
+  const lightButton = byId("loading-light-btn");
+  lightButton.disabled = FORCE_LIGHT_MODE;
+  lightButton.textContent = FORCE_LIGHT_MODE ? "軽量モード使用中" : "軽量モードで起動";
 }
 
 function retryCameraOrModel() {
@@ -1940,8 +2192,46 @@ function retryCameraOrModel() {
     startCamera(isFrontCamera ? "user" : "environment");
     return;
   }
-  showLoader("顔認識を準備中");
+  showLoader("顔認識を準備しています");
   initializeFaceMesh();
+}
+
+async function checkCameraPermission() {
+  const note = byId("loading-error-note");
+  let permissionState = "unknown";
+  try {
+    permissionState = (await navigator.permissions?.query?.({ name: "camera" }))?.state || "unknown";
+  } catch {}
+
+  if (permissionState === "granted") {
+    note.textContent = "カメラは許可されています。もう一度起動します。";
+    note.hidden = false;
+    window.setTimeout(retryCameraOrModel, 500);
+    return;
+  }
+  const iosHelp = "iPhone・iPad：設定 → Safari → カメラ → 許可";
+  const androidHelp = "Android：ブラウザのサイト設定 → カメラ → 許可";
+  note.textContent = permissionState === "denied"
+    ? `カメラが拒否されています。${AUTO_PLATFORM === "android" ? androidHelp : iosHelp} に変更してください。`
+    : `次のカメラ確認で「許可」を選んでください。許可画面が出ない場合は、${AUTO_PLATFORM === "android" ? androidHelp : iosHelp} を確認してください。`;
+  note.hidden = false;
+}
+
+function startLightMode() {
+  if (FORCE_LIGHT_MODE) return;
+  try { sessionStorage.setItem("arCameraForceLightV1", "1"); } catch {}
+  byId("loading-message").textContent = "軽量モードで再起動しています";
+  byId("loading-error-actions").hidden = true;
+  window.setTimeout(() => location.reload(), 180);
+}
+
+function toggleRecoveryHelp() {
+  const button = byId("loading-help-btn");
+  const note = byId("loading-error-note");
+  const opening = note.hidden;
+  note.textContent = "改善しない場合は、ほかのアプリのカメラを閉じ、ブラウザを再起動してください。Androidでは軽量モードも試せます。";
+  note.hidden = !opening;
+  button.setAttribute("aria-expanded", String(opening));
 }
 
 function showToast(message) {

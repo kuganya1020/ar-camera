@@ -10,7 +10,7 @@
   <link rel="icon" type="image/png" href="app_icon.png.optimized.png?v=20260802">
   <link rel="manifest" href="manifest.webmanifest?v=20261112-offline">
   <title>AR Camera</title>
-  <link rel="stylesheet" href="style.css?v=20261112-onboarding">
+  <link rel="stylesheet" href="style.css?v=20261112-error-recovery">
   <script>
     (() => {
       let platform = "";
@@ -27,7 +27,7 @@
   </script>
   <script defer src="vendor/p5.min.js?v=1.9.4" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
   <script defer src="vendor/ml5.min.js?v=1.2.1" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
-  <script defer src="sketch.js?v=20261112-android-offline"></script>
+  <script defer src="sketch.js?v=20261112-error-recovery"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -44,7 +44,7 @@
       </div>
     </header>
 
-    <div id="status-pill" role="status" aria-live="polite">カメラを準備中</div>
+    <div id="status-pill" role="status" aria-live="polite">カメラを起動しています</div>
     <div id="video-timer" aria-live="off">00:00</div>
 
     <div class="control-deck">
@@ -78,6 +78,10 @@
         <button id="close-panel-btn" class="text-btn" type="button">閉じる</button>
       </div>
       <div id="upload-section">
+        <div class="upload-intro">
+          <strong>PNG画像を追加</strong>
+          <p>顔エフェクトまたは背景フレームとして使用できます</p>
+        </div>
         <p class="step-label"><span>1</span>画像を選ぶ</p>
         <label class="file-button" for="file-input">画像を選択</label>
         <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp">
@@ -105,12 +109,20 @@
         <strong>位置を調整</strong>
         <button id="adjustment-save-btn" class="overlay-save-btn" type="button">保存</button>
       </header>
-      <p class="adjustment-hint">ドラッグで移動・ピンチで拡大縮小</p>
+      <p class="adjustment-hint">1本指で移動・2本指で拡大縮小</p>
       <div class="adjustment-toolbar">
-        <div class="adjustment-quick-actions">
-          <button id="fine-adjust-toggle" class="toolbar-action-btn" type="button" aria-expanded="false">微調整</button>
-          <button id="reset-effect-btn" class="toolbar-action-btn" type="button">リセット</button>
+        <div class="adjustment-basic-actions" aria-label="基本調整">
+          <button class="adjustment-mode-chip" data-adjustment-help="position" type="button">
+            <strong>位置</strong><span>1本指</span>
+          </button>
+          <button class="adjustment-mode-chip" data-adjustment-help="scale" type="button">
+            <strong>大きさ</strong><span>2本指</span>
+          </button>
+          <button id="reset-effect-btn" class="adjustment-mode-chip" type="button">
+            <strong>リセット</strong><span>初期状態</span>
+          </button>
         </div>
+        <button id="fine-adjust-toggle" class="detail-adjust-toggle" type="button" aria-expanded="false" aria-controls="fine-adjust-controls">詳細調整</button>
         <div id="fine-adjust-controls" class="fine-adjust-controls" hidden>
           <div class="toolbar-position">
             <span class="toolbar-label">位置</span>
@@ -151,6 +163,7 @@
           <li>下の一覧からエフェクトを選びます</li>
           <li>＋ボタンで自分の画像を追加できます</li>
           <li>中央のボタンで撮影します</li>
+          <li>エフェクトの長押しでお気に入り・並べ替え・削除ができます</li>
         </ol>
         <p>追加した画像はプレビューを見ながら位置と大きさを調整できます</p>
         <button id="change-platform-btn" class="secondary-btn device-settings-btn" type="button">端末設定を変更</button>
@@ -187,12 +200,36 @@
       </div>
     </section>
 
+    <section id="effect-menu" class="modal-layer" role="dialog" aria-modal="true" aria-labelledby="effect-menu-title" hidden>
+      <div class="plain-modal compact effect-menu-modal">
+        <h2 id="effect-menu-title">エフェクトを管理</h2>
+        <div class="effect-menu-actions">
+          <button id="effect-favorite-btn" class="secondary-btn" type="button">お気に入りに追加</button>
+          <div class="effect-move-actions" role="group" aria-label="並び順を変更">
+            <button id="effect-move-left-btn" class="secondary-btn" type="button">左へ移動</button>
+            <button id="effect-move-right-btn" class="secondary-btn" type="button">右へ移動</button>
+          </div>
+          <button id="effect-menu-edit-btn" class="secondary-btn" type="button">位置を調整</button>
+          <button id="effect-menu-delete-btn" class="danger-btn" type="button">削除</button>
+        </div>
+        <button id="effect-menu-close-btn" class="text-btn effect-menu-close" type="button">閉じる</button>
+      </div>
+    </section>
+
     <div id="flash-overlay" aria-hidden="true"></div>
     <div id="toast" role="status" aria-live="polite" hidden></div>
     <div id="loading-screen" role="status" aria-live="polite">
-      <div class="spinner" aria-hidden="true"></div>
-      <p>カメラを準備中</p>
-      <button id="loading-retry-btn" class="secondary-btn loading-retry-btn" type="button" hidden>もう一度試す</button>
+      <div class="loading-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loading-message">カメラを起動しています</p>
+        <div id="loading-error-actions" class="loading-error-actions" hidden>
+          <button id="loading-retry-btn" class="primary-btn" type="button">もう一度試す</button>
+          <button id="loading-permission-btn" class="secondary-btn" type="button">カメラの許可を確認</button>
+          <button id="loading-light-btn" class="secondary-btn" type="button">軽量モードで起動</button>
+          <button id="loading-help-btn" class="text-btn loading-help-btn" type="button" aria-expanded="false">ヘルプを見る</button>
+          <div id="loading-error-note" class="loading-error-note" role="note" hidden></div>
+        </div>
+      </div>
     </div>
   </main>
   <script>
@@ -216,16 +253,27 @@
         loader.hidden = false;
         loader.style.opacity = "1";
         loader.querySelector(".spinner").hidden = true;
-        loader.querySelector("p").textContent = "必要なデータを読み込めませんでした";
-        retry.hidden = false;
+        loader.querySelector("#loading-message").textContent = "必要なデータを読み込めませんでした";
+        document.getElementById("loading-error-actions").hidden = false;
         retry.addEventListener("click", () => location.reload(), { once: true });
+        document.getElementById("loading-light-btn").addEventListener("click", () => {
+          try { sessionStorage.setItem("arCameraForceLightV1", "1"); } catch {}
+          location.reload();
+        }, { once: true });
+        const showDependencyHelp = () => {
+          const note = document.getElementById("loading-error-note");
+          note.textContent = "通信を確認して再読み込みしてください。一度オンラインで開くと、次回からオフラインでも使えます。";
+          note.hidden = false;
+        };
+        document.getElementById("loading-permission-btn").addEventListener("click", showDependencyHelp);
+        document.getElementById("loading-help-btn").addEventListener("click", showDependencyHelp);
       });
     })();
   </script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=20261112-android-offline")
+        navigator.serviceWorker.register("./sw.js?v=20261112-error-recovery")
           .catch((error) => console.warn("オフライン準備に失敗しました", error));
       });
     }

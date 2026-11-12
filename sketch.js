@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261112-ipad-frame-contain";
+const APP_BUILD = "20261112-ipad-weekday-align";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -30,7 +30,7 @@ const DEFAULT_ASSETS = [
         orientation: "portrait",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .79, y: .978, fontSize: .019 }
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .778, y: .982, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-frame-4x3.png",
@@ -65,7 +65,7 @@ const DEFAULT_ASSETS = [
         orientation: "portrait",
         fit: "contain",
         yOffsetRatio: 0,
-        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .79, y: .978, fontSize: .019 }
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .778, y: .982, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-pottery-4x3.png",

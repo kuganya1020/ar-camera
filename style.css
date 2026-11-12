@@ -560,6 +560,91 @@ body.adjustment-mode .effects-dock {
   background: rgba(0,0,0,.62);
 }
 
+.onboarding-layer {
+  position: fixed;
+  z-index: 70;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0,0,0,.22);
+}
+
+.onboarding-guide {
+  width: min(100%, 320px);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(20,20,22,.9);
+  box-shadow: 0 16px 48px rgba(0,0,0,.32);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.onboarding-title {
+  margin: 0 0 12px;
+  color: rgba(255,255,255,.72);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-align: center;
+}
+
+.onboarding-callouts {
+  display: grid;
+  gap: 8px;
+}
+
+.onboarding-callouts p {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin: 0;
+  padding: 7px 11px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  background: rgba(255,255,255,.06);
+}
+
+.onboarding-callouts span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.onboarding-callouts strong {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.onboarding-guide > .primary-btn {
+  width: 100%;
+  margin-top: 14px;
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .onboarding-guide {
+    width: min(520px, calc(100vw - 40px));
+  }
+
+  .onboarding-callouts {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .onboarding-callouts p {
+    grid-template-columns: 28px 1fr;
+  }
+}
+
 .plain-modal {
   width: min(100%, 360px);
   padding: 22px;

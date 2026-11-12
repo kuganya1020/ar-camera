@@ -12,7 +12,7 @@
   <title>AR Camera</title>
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="stylesheet" href="style.css?v=20261110-date-effects-fix">
+  <link rel="stylesheet" href="style.css?v=20261112-onboarding">
   <script>
     (() => {
       let platform = "";
@@ -29,7 +29,7 @@
   </script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
   <script defer src="https://unpkg.com/ml5@1.2.1/dist/ml5.min.js" onerror="window.AR_CAMERA_DEPENDENCY_ERROR=true"></script>
-  <script defer src="sketch.js?v=20261110-date-effects-fix"></script>
+  <script defer src="sketch.js?v=20261112-ipad-landscape-hq"></script>
 </head>
 <body>
   <main id="app" aria-label="ARカメラ">
@@ -131,6 +131,18 @@
             <button class="adjust-btn" data-scale="up" type="button" aria-label="大きくする">＋</button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <section id="onboarding-overlay" class="onboarding-layer" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" hidden>
+      <div class="onboarding-guide">
+        <p id="onboarding-title" class="onboarding-title">3ステップで撮影</p>
+        <div class="onboarding-callouts">
+          <p><span>1</span><strong>エフェクトを選ぶ</strong></p>
+          <p><span>2</span><strong>顔をカメラへ向ける</strong></p>
+          <p><span>3</span><strong>撮影ボタンを押す</strong></p>
+        </div>
+        <button id="onboarding-start-btn" class="primary-btn" type="button">使ってみる</button>
       </div>
     </section>
 

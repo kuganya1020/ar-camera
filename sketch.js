@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261110-date-effects-fix";
+const APP_BUILD = "20261112-ipad-landscape-hq";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -17,15 +17,26 @@ const DEFAULT_ASSETS = [
     yOff: 0,
     dateOverlay: true,
     frameVariants: {
-      phone: {
+      phonePortrait: {
         fileName: "museum-frame-9x16.png",
         aspect: 9 / 16,
-        date: { yearX: .523, monthX: .617, dayX: .692, y: .988, fontSize: .0125 }
+        orientation: "portrait",
+        yOffsetRatio: -.01,
+        date: { yearX: .523, monthX: .617, dayX: .692, weekdayX: .785, y: .988, fontSize: .0125 }
       },
-      tablet: {
+      tabletPortrait: {
         fileName: "museum-frame-3x4.png",
         aspect: 3 / 4,
-        date: { yearX: .528, monthX: .617, dayX: .692, y: .987, fontSize: .019 }
+        orientation: "portrait",
+        yOffsetRatio: -.01,
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .785, y: .982, fontSize: .019 }
+      },
+      tabletLandscape: {
+        fileName: "museum-frame-4x3.png",
+        aspect: 4 / 3,
+        orientation: "landscape",
+        yOffsetRatio: 0,
+        date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .982, fontSize: .019 }
       }
     }
   },
@@ -39,15 +50,26 @@ const DEFAULT_ASSETS = [
     yOff: 0,
     dateOverlay: true,
     frameVariants: {
-      phone: {
+      phonePortrait: {
         fileName: "museum-pottery-9x16.png",
         aspect: 9 / 16,
-        date: { yearX: .523, monthX: .617, dayX: .692, y: .988, fontSize: .0125 }
+        orientation: "portrait",
+        yOffsetRatio: -.01,
+        date: { yearX: .523, monthX: .617, dayX: .692, weekdayX: .785, y: .988, fontSize: .0125 }
       },
-      tablet: {
+      tabletPortrait: {
         fileName: "museum-pottery-3x4.png",
         aspect: 3 / 4,
-        date: { yearX: .528, monthX: .617, dayX: .692, y: .987, fontSize: .019 }
+        orientation: "portrait",
+        yOffsetRatio: -.01,
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .785, y: .982, fontSize: .019 }
+      },
+      tabletLandscape: {
+        fileName: "museum-pottery-4x3.png",
+        aspect: 4 / 3,
+        orientation: "landscape",
+        yOffsetRatio: 0,
+        date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .982, fontSize: .019 }
       }
     }
   }
@@ -126,14 +148,19 @@ let canvasResizeFrame = 0;
 let orientationRefreshFrame = 0;
 let orientationRefreshFrame2 = 0;
 let nextFaceTrackId = 1;
+let onboardingScheduled = false;
 const facePlacementStates = new Map();
 
 function preload() {
   for (const asset of DEFAULT_ASSETS) {
-    const source = chooseFrameVariant(asset, true)?.fileName || asset.fileName;
-    if (source) {
-      images.set(asset.id, loadImage(source, undefined, () => {
-        images.delete(asset.id);
+    const variants = asset.frameVariants ? Object.values(asset.frameVariants) : [];
+    const sources = variants.length
+      ? variants.map((variant) => variant.fileName)
+      : [asset.fileName].filter(Boolean);
+    for (const source of new Set(sources)) {
+      const key = variants.length ? `${asset.id}:${source}` : asset.id;
+      images.set(key, loadImage(source, undefined, () => {
+        images.delete(key);
       }));
     }
   }
@@ -144,7 +171,7 @@ function setup() {
   modelLoading = false;
 
   const useLightRendering = IS_LOW_SPEC_DEVICE;
-  const density = useLightRendering ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
+  const density = useLightRendering ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   pixelDensity(density);
   frameRate(useLightRendering ? 24 : 30);
 
@@ -203,15 +230,17 @@ function draw() {
   if (config.point === "bg") {
     // 専用比率を持つ縦フレームは画面の横幅へ合わせ、それ以外は従来どおり全体を収める。
     const frameVariant = chooseFrameVariant(config);
-    const usePortraitFrameWidthFit = frameVariant && height >= width;
-    const fitScale = usePortraitFrameWidthFit
+    const useDedicatedFrameWidthFit = Boolean(frameVariant);
+    const fitScale = useDedicatedFrameWidthFit
       ? width / stamp.width
       : Math.min(width / stamp.width, height / stamp.height);
     const backgroundScale = fitScale * clamp(config.scale, .2, 6);
     const drawWidth = stamp.width * backgroundScale;
     const drawHeight = stamp.height * backgroundScale;
     const centerX = width / 2 + numberOrZero(config.xOff) * (width / 480);
-    const frameVerticalCorrection = frameVariant ? -height * .01 : 0;
+    const frameVerticalCorrection = frameVariant
+      ? height * numberOrZero(frameVariant.yOffsetRatio)
+      : 0;
     const centerY = height / 2 + numberOrZero(config.yOff) * (width / 480) + frameVerticalCorrection;
     imageMode(CENTER);
     image(
@@ -269,10 +298,13 @@ function chooseFrameVariant(asset, useBrowserViewport = false) {
     typeof height === "number" && height > 100;
   const viewportWidth = Math.max(1, canvasReady ? width : window.innerWidth);
   const viewportHeight = Math.max(1, canvasReady ? height : window.innerHeight);
-  const shortLongRatio = Math.min(viewportWidth, viewportHeight) / Math.max(viewportWidth, viewportHeight);
-  const candidates = Object.values(asset.frameVariants);
+  const orientation = viewportWidth > viewportHeight ? "landscape" : "portrait";
+  const viewportAspect = viewportWidth / viewportHeight;
+  const allCandidates = Object.values(asset.frameVariants);
+  const orientationCandidates = allCandidates.filter((candidate) => candidate.orientation === orientation);
+  const candidates = orientationCandidates.length ? orientationCandidates : allCandidates;
   return candidates.reduce((best, candidate) => (
-    Math.abs(candidate.aspect - shortLongRatio) < Math.abs(best.aspect - shortLongRatio)
+    Math.abs(candidate.aspect - viewportAspect) < Math.abs(best.aspect - viewportAspect)
       ? candidate
       : best
   ), candidates[0]);
@@ -291,6 +323,10 @@ function drawAutomaticFrameDate(layout, dateLayout) {
   text(String(today.getFullYear()), layout.x + layout.width * dateLayout.yearX, dateY);
   text(String(today.getMonth() + 1), layout.x + layout.width * dateLayout.monthX, dateY);
   text(String(today.getDate()), layout.x + layout.width * dateLayout.dayX, dateY);
+  if (Number.isFinite(dateLayout.weekdayX)) {
+    const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+    text(weekdays[today.getDay()], layout.x + layout.width * dateLayout.weekdayX, dateY);
+  }
   pop();
 }
 
@@ -733,6 +769,7 @@ async function startCamera(facingMode) {
       cameraReady = true;
       setCameraSwitchBusy(false);
       hideLoader();
+      scheduleFirstRunOnboarding();
       setStatus(modelReady ? "顔を認識中" : "顔認識を準備中");
       if (modelReady) beginFaceDetection();
       else initializeFaceMesh();
@@ -925,7 +962,11 @@ function checkFaceDetectionHealth() {
 }
 
 async function getCameraConstraints(facingMode) {
-  const baseVideo = {};
+  // 通常端末では4:3を基準に高解像度を希望し、非対応端末にはブラウザ側で安全にフォールバックさせる。
+  const baseVideo = IS_LOW_SPEC_DEVICE ? {} : {
+    width: { ideal: 1280 },
+    height: { ideal: 960 }
+  };
 
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
   const cameras = devices.filter((device) => device.kind === "videoinput");
@@ -1001,10 +1042,8 @@ function bindUI() {
   byId("delete-cancel-btn").addEventListener("click", () => setModal("delete-dialog", false));
   byId("delete-confirm-btn").addEventListener("click", deleteEffect);
   byId("help-btn").addEventListener("click", () => setModal("tutorial-overlay", true));
-  byId("tutorial-close-btn").addEventListener("click", () => {
-    setModal("tutorial-overlay", false);
-    safeStorageSet("arCameraTutorialSeen", "1");
-  });
+  byId("tutorial-close-btn").addEventListener("click", () => setModal("tutorial-overlay", false));
+  byId("onboarding-start-btn").addEventListener("click", closeFirstRunOnboarding);
   byId("change-platform-btn").addEventListener("click", () => {
     setModal("tutorial-overlay", false);
     openPlatformSelector(true);
@@ -1048,9 +1087,24 @@ function bindUI() {
   window.addEventListener("pagehide", cleanup);
   window.addEventListener("beforeunload", cleanup);
 
-  if (SAVED_PLATFORM && !safeStorageGet("arCameraTutorialSeen")) {
-    window.setTimeout(() => setModal("tutorial-overlay", true), 400);
-  }
+}
+
+function scheduleFirstRunOnboarding() {
+  if (onboardingScheduled || !SAVED_PLATFORM) return;
+  if (safeStorageGet("arCameraOnboardingSeenV1") || safeStorageGet("arCameraTutorialSeen")) return;
+  onboardingScheduled = true;
+  window.setTimeout(() => {
+    if (!cameraReady || document.hidden) {
+      onboardingScheduled = false;
+      return;
+    }
+    setModal("onboarding-overlay", true);
+  }, 450);
+}
+
+function closeFirstRunOnboarding() {
+  safeStorageSet("arCameraOnboardingSeenV1", "1");
+  setModal("onboarding-overlay", false);
 }
 
 function readSavedPlatform() {
@@ -1253,6 +1307,7 @@ function syncPlacementButtons() {
 function handleGlobalKeydown(event) {
   if (event.key !== "Escape") return;
   if (!byId("delete-dialog").hidden) return setModal("delete-dialog", false);
+  if (!byId("onboarding-overlay").hidden) return closeFirstRunOnboarding();
   if (!byId("tutorial-overlay").hidden) return setModal("tutorial-overlay", false);
   if (!byId("platform-overlay").hidden && !byId("platform-cancel-btn").hidden) {
     return setModal("platform-overlay", false);
@@ -1410,7 +1465,7 @@ async function takePhoto() {
   byId("flash-overlay").classList.remove("flash");
   void byId("flash-overlay").offsetWidth;
   byId("flash-overlay").classList.add("flash");
-  const blob = await canvasToBlob(canvas, "image/jpeg", .92);
+  const blob = await canvasToBlob(canvas, "image/jpeg", .97);
   if (!blob) return showToast("写真を保存できませんでした");
   await shareOrDownload(blob, `ar-photo-${Date.now()}.jpg`, "image/jpeg", "AR写真");
 }
@@ -1431,7 +1486,7 @@ function startRecording() {
     const canvasPixels = canvas.width * canvas.height;
     const videoBitsPerSecond = IS_LOW_SPEC_DEVICE
       ? 1500000
-      : canvasPixels <= 1280 * 720 ? 2500000 : 4000000;
+      : canvasPixels <= 1280 * 720 ? 4000000 : 8000000;
     recordingStream = canvas.captureStream(recordingFps);
     mediaRecorder = new MediaRecorder(recordingStream, {
       ...(mimeType ? { mimeType } : {}),
@@ -1746,7 +1801,12 @@ function persistMetadata() {
 }
 
 function getAssetImage(asset) {
-  return asset ? images.get(asset.id) : null;
+  if (!asset) return null;
+  const frameVariant = chooseFrameVariant(asset);
+  if (frameVariant?.fileName) {
+    return images.get(`${asset.id}:${frameVariant.fileName}`) || null;
+  }
+  return images.get(asset.id) || null;
 }
 
 function getAssetPreviewUrl(asset) {

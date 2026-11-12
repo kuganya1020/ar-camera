@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261112-ipad-landscape-hq";
+const APP_BUILD = "20261112-ipad-frame-contain";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -28,13 +28,15 @@ const DEFAULT_ASSETS = [
         fileName: "museum-frame-3x4.png",
         aspect: 3 / 4,
         orientation: "portrait",
-        yOffsetRatio: -.01,
-        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .785, y: .982, fontSize: .019 }
+        fit: "contain",
+        yOffsetRatio: 0,
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .79, y: .978, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-frame-4x3.png",
         aspect: 4 / 3,
         orientation: "landscape",
+        fit: "contain",
         yOffsetRatio: 0,
         date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .982, fontSize: .019 }
       }
@@ -61,13 +63,15 @@ const DEFAULT_ASSETS = [
         fileName: "museum-pottery-3x4.png",
         aspect: 3 / 4,
         orientation: "portrait",
-        yOffsetRatio: -.01,
-        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .785, y: .982, fontSize: .019 }
+        fit: "contain",
+        yOffsetRatio: 0,
+        date: { yearX: .528, monthX: .617, dayX: .692, weekdayX: .79, y: .978, fontSize: .019 }
       },
       tabletLandscape: {
         fileName: "museum-pottery-4x3.png",
         aspect: 4 / 3,
         orientation: "landscape",
+        fit: "contain",
         yOffsetRatio: 0,
         date: { yearX: .532, monthX: .618, dayX: .696, weekdayX: .786, y: .982, fontSize: .019 }
       }
@@ -230,10 +234,11 @@ function draw() {
   if (config.point === "bg") {
     // 専用比率を持つ縦フレームは画面の横幅へ合わせ、それ以外は従来どおり全体を収める。
     const frameVariant = chooseFrameVariant(config);
-    const useDedicatedFrameWidthFit = Boolean(frameVariant);
-    const fitScale = useDedicatedFrameWidthFit
-      ? width / stamp.width
-      : Math.min(width / stamp.width, height / stamp.height);
+    const fitScale = frameVariant?.fit === "contain"
+      ? Math.min(width / stamp.width, height / stamp.height)
+      : frameVariant
+        ? width / stamp.width
+        : Math.min(width / stamp.width, height / stamp.height);
     const backgroundScale = fitScale * clamp(config.scale, .2, 6);
     const drawWidth = stamp.width * backgroundScale;
     const drawHeight = stamp.height * backgroundScale;

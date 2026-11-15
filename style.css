@@ -29,12 +29,19 @@ button:focus-visible, input:focus-visible {
   outline-offset: 2px;
 }
 
-#app, #camera-container {
+#app {
   position: fixed;
   inset: 0;
 }
 
 #camera-container {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  width: min(100vw, 75vh);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  transform: translateX(-50%);
   background: #101010;
   touch-action: none;
 }
@@ -45,16 +52,33 @@ canvas {
   height: 100% !important;
 }
 
+@media (orientation: landscape) {
+  #camera-container {
+    top: 50%;
+    width: auto;
+    height: min(100vh, 75vw);
+    aspect-ratio: 4 / 3;
+    transform: translate(-50%, -50%);
+  }
+}
+
 .top-bar {
   position: fixed;
   z-index: 20;
   top: 0;
-  left: 0;
-  right: 0;
+  left: 50%;
+  width: min(100vw, 75vh);
+  transform: translateX(-50%);
   display: flex;
   justify-content: space-between;
   padding: calc(var(--top-safe) + 12px) 14px 12px;
   pointer-events: none;
+}
+
+@media (orientation: landscape) {
+  .top-bar {
+    width: min(100vw, 133.333vh);
+  }
 }
 
 .top-actions { display: flex; gap: 10px; margin-left: auto; }

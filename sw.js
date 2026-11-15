@@ -1,4 +1,4 @@
-const CACHE_NAME = "ar-camera-offline-20261112-v9";
+const CACHE_NAME = "ar-camera-offline-20261115-v10";
 
 const APP_FILES = [
   "./",
@@ -11,10 +11,8 @@ const APP_FILES = [
   "./switch_icon.png",
   "./mimi.png",
   "./hat.png",
-  "./museum-frame-9x16.png",
   "./museum-frame-3x4.png",
   "./museum-frame-4x3.png",
-  "./museum-pottery-9x16.png",
   "./museum-pottery-3x4.png",
   "./museum-pottery-4x3.png",
   "./vendor/p5.min.js",

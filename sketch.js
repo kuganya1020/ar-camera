@@ -1,6 +1,6 @@
 "use strict";
 
-const APP_BUILD = "20261112-error-recovery";
+const APP_BUILD = "20261115-fixed-4x3-stage";
 const DEFAULT_ASSETS = [
   { id: "none", name: "なし", point: "none", scale: 1, xOff: 0, yOff: 0 },
   { id: "mimi", name: "みみ", fileName: "mimi.png", point: "face", scale: 1, xOff: 0, yOff: 0 },
@@ -15,14 +15,7 @@ const DEFAULT_ASSETS = [
     yOff: 0,
     dateOverlay: true,
     frameVariants: {
-      phonePortrait: {
-        fileName: "museum-frame-9x16.png",
-        aspect: 9 / 16,
-        orientation: "portrait",
-        yOffsetRatio: -.01,
-        date: { yearX: .523, monthX: .617, dayX: .692, weekdayX: .785, y: .988, fontSize: .0125 }
-      },
-      tabletPortrait: {
+      portrait: {
         fileName: "museum-frame-3x4.png",
         aspect: 3 / 4,
         orientation: "portrait",
@@ -30,7 +23,7 @@ const DEFAULT_ASSETS = [
         yOffsetRatio: 0,
         date: { yearX: .533, monthX: .622, dayX: .697, weekdayX: .781, y: .985, fontSize: .019 }
       },
-      tabletLandscape: {
+      landscape: {
         fileName: "museum-frame-4x3.png",
         aspect: 4 / 3,
         orientation: "landscape",
@@ -50,14 +43,7 @@ const DEFAULT_ASSETS = [
     yOff: 0,
     dateOverlay: true,
     frameVariants: {
-      phonePortrait: {
-        fileName: "museum-pottery-9x16.png",
-        aspect: 9 / 16,
-        orientation: "portrait",
-        yOffsetRatio: -.01,
-        date: { yearX: .523, monthX: .617, dayX: .692, weekdayX: .785, y: .988, fontSize: .0125 }
-      },
-      tabletPortrait: {
+      portrait: {
         fileName: "museum-pottery-3x4.png",
         aspect: 3 / 4,
         orientation: "portrait",
@@ -65,7 +51,7 @@ const DEFAULT_ASSETS = [
         yOffsetRatio: 0,
         date: { yearX: .533, monthX: .622, dayX: .697, weekdayX: .781, y: .985, fontSize: .019 }
       },
-      tabletLandscape: {
+      landscape: {
         fileName: "museum-pottery-4x3.png",
         aspect: 4 / 3,
         orientation: "landscape",
@@ -344,7 +330,7 @@ function drawAutomaticFrameDate(layout, dateLayout) {
 }
 
 function getCameraFrame() {
-  // 既存プレビューと同じ優先順を維持する（表示比率を変えない）。
+  // Canvasは縦3:4／横4:3に固定し、映像とFaceMeshへ同じ中央クロップを適用する。
   const sourceWidth = video?.width || video?.elt?.videoWidth || width;
   const sourceHeight = video?.height || video?.elt?.videoHeight || height;
   const scale = Math.max(width / sourceWidth, height / sourceHeight);
